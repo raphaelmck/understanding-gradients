@@ -56,11 +56,7 @@ Arrow decomposition, perpendicular component highlighted as “wasted”.
 
 Idea: If change depends on overlap, then there must be a single vector that encodes all directional changes.
 
-For every direction 
-v
-v, change = “how much 
-v
-v overlaps with something”.
+For every direction $v$, change = “how much $v$ overlaps with something”.
 
 That “something” must itself be a vector.
 
