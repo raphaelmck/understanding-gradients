@@ -1,142 +1,49 @@
-Core theme of the video
+> The surface generates, and slowly spins
 
-Local change is about overlap.
-Gradients encode all possible directional changes at a point.
+Suppose you have a landscape, or terrain, and you want to find which direction to go, in order to climb up, or ascend, as fast as possible. 
 
-Everything below serves that sentence.
+> Surface stops spinning and the axis of the graph appear.
 
-High-level arc (what the viewer should feel)
+In three dimentions, you can think of a function $f(x,y)$ that turns two numbers into a height. 
 
-“Change depends on direction”
+> A dot on the xy plane, dotted line up to the surface and another dot with a value
 
-“Direction matters through overlap”
+Pick a point on the ground, and the function tells you how high you are. Now what we want is local steepest ascent: at one point, there isn't a single slope, like you would see in a single variable derivative
 
-“There is one direction that explains all others”
+> Possibly show something about the "normal" derivative
 
-“That direction is the gradient”
+There are instead infinitely many slopes, one for each direction you could choose to walk
 
-“This is why gradients are everywhere”
+> A couple arrows on the tangent plane, small numbers +0.3, -0.1 ...
 
-Topic flow (with insight + visual intent)
-1. Change depends on direction (setup)
+We then introduce a way to organize all these directional slopes into something simpler
 
-Idea: At a point, the function doesn’t have one rate of change.
+> Arrow fade into the special arrow
 
-Standing on a surface → walk in different directions → different height change.
+Notice the change you experience doesn't depend of the direction itself, it depend on how aligned that direction is, with the uphill tendency of the surface
 
-Same location, infinitely many possible changes.
+> One direction arrow rotating, snall number grows and shrinks
 
-Insight planted:
-Change is not a scalar — it’s directional.
+When you move with this direction, the height increases quickly, when you move against it, the height drops quickly, when you move perpendicular to it,
 
-Visual:
-Point on surface, arrows radiating out.
+> Perpendicular arrow shows 0
 
-2. Directional change comes from projection / overlap
+there's essentially no change at all
 
-Idea: Only the part of your movement aligned with “uphill” actually increases the function.
+> $\nabla f$ appears
 
-Decompose motion into:
+This single vector encodes all local slopes at once. For any direction you choose, the rate of change is determined by how much that direction overlaps with this vector. Ans when the two directions line up perfectly, the increase is as large as it can possibly be.
 
-uphill component
+> transition into level curves
 
-sideways component
+As a consequence, directions that stay on the same height, level curves, must be perpendicular to the gradient, They're directions of zero overlap
 
-Sideways motion contributes nothing.
+> Show dot product
 
-Insight:
-Change = overlap between your direction and a special direction.
+This is why they show up in physics, numerical methods, and learning algorithms
 
-This is the conceptual birth of the dot product — but unnamed.
+> Cycle through visualizations of those
 
-Visual:
-Arrow decomposition, perpendicular component highlighted as “wasted”.
+So for a function $f(x,y)$, $\frac{\partial f}{\partial x}$ tells you, if I move only in the $x$ direction, how fast does the height change, similarly for $\frac{\partial f}{\partial y}$, these are direction-specific measurements.
 
-3. There exists a direction that explains all others
-
-Idea: If change depends on overlap, then there must be a single vector that encodes all directional changes.
-
-For every direction $v$, change = “how much $v$ overlaps with something”.
-
-That “something” must itself be a vector.
-
-Insight:
-Instead of memorizing infinitely many directional derivatives, you store one vector.
-
-This is a big “aha”.
-
-Visual:
-Many arrows → one arrow summarizing them.
-
-4. That vector is the gradient
-
-Idea: The gradient is defined so that:
-
-its direction = direction of maximum increase
-
-its length = how steep the increase is
-
-But crucially:
-
-Any directional change is just the overlap with the gradient.
-
-Insight:
-Gradients don’t just point uphill —
-they encode all local behavior.
-
-Visual:
-Gradient arrow + projection of other directions onto it.
-
-5. Why “steepest direction” is not a coincidence
-
-Idea: Among all unit directions, the one with maximal overlap is the gradient itself.
-
-Overlap is maximized when vectors align.
-
-This explains “steepest ascent” without calculus tricks.
-
-Insight:
-Steepest ascent is a geometric inevitability, not a formula result.
-
-Visual:
-Rotating direction vector, overlap magnitude changing.
-
-6. Why perpendicular directions don’t change the function
-
-Idea: If overlap is zero, there is no change.
-
-Directions perpendicular to the gradient live along level curves.
-
-This explains contour plots instantly.
-
-Insight:
-Level sets are orthogonal to gradients because they have to be.
-
-Visual:
-Contour lines + normal vector.
-
-7. Why gradients matter (zoom out)
-
-Idea: Gradients compress local complexity into usable information.
-
-They appear whenever:
-
-you want to improve something locally
-
-you want to follow change
-
-you want to approximate nonlinear behavior linearly
-
-Insight:
-Gradients are not “optimization tools” —
-they are local summaries of reality.
-
-Visual:
-Different contexts, same arrow idea reused.
-
-8. Quiet closing insight
-
-End on something reflective, not instructional.
-
-“Once you see gradients as overlap and direction,
-they stop being formulas and start being geometry.”
+Now take any direction in the plane, representend by a unit vector $\mathbf{v}=(v_x,v_y)$, moving in direction $\mathbf{v}$ means move $v_x$ in the $x$-direction, and
