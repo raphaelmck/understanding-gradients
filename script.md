@@ -46,4 +46,12 @@ This is why they show up in physics, numerical methods, and learning algorithms
 
 So for a function $f(x,y)$, $\frac{\partial f}{\partial x}$ tells you, if I move only in the $x$ direction, how fast does the height change, similarly for $\frac{\partial f}{\partial y}$, these are direction-specific measurements.
 
-Now take any direction in the plane, representend by a unit vector $\mathbf{v}=(v_x,v_y)$, moving in direction $\mathbf{v}$ means move $v_x$ in the $x$-direction, and
+Now take any direction in the plane, representend by a unit vector $\mathbf{v}=(v_x,v_y)$, moving in direction $\mathbf{v}$ means move $v_x$ in the $x$-direction, and move $v_y$ in the $y$-direction. For a small step, the change in height is approximately 
+
+change $\approx v_x \frac{\partial f}{\partial x}+v_y\frac{\partial f}{\partial y}$ rewrite this change $\approx \begin{pmatrix} \frac{\partial f}{\partial x} \\ \frac{\partial f}{\partial y} \end{pmatrix} \cdot \begin{pmatrix} v_x \\ v_y \end{pmatrix}$ That vector of partial derivatives appears because it is the unique vector whose dot product with a direction vector gives the directional rate of change. That vector is the gradient $\nabla f = \left(\frac{\partial f}{\partial x}, \frac{\partial f}{\partial y}\right)$. 
+
+
+
+
+
+I do want to make a video of my own on gradient descent, one of many applications of this operator, that was one of the keys to developping the crazy technology we have around today, in the meantime I encourage you to watch 3b1b's video, I'll see you in the next one. 
