@@ -92,42 +92,54 @@ def build_surface(axes):
 
 class S01_SurfaceReveal(ThreeDScene):
     def construct(self):
-        # 1. Setup
+        # 1. Setup (We need the axes for calculations, but won't add them yet)
         axes, axes_labels, static_surface = build_world()
         
-        # Camera configs
+        # ---------------------------------------------------------
+        # Syncing with Scene 2 Start
+        # Scene 2 starts at: phi=72, theta=25, zoom=1.02
+        # ---------------------------------------------------------
         phi    = 72 * DEGREES
         theta0 = -35 * DEGREES
-        theta1 = 25 * DEGREES
+        theta1 = 25 * DEGREES   # Matches Scene 2 start
         zoom0  = 0.90
-        zoom1  = 1.02
+        zoom1  = 1.02           # Matches Scene 2 start
         
         self.set_camera_orientation(phi=phi, theta=theta0, zoom=zoom0)
 
         # 2. Trackers
-        # u_tracker controls the surface growth
+        # We track 'u' for the surface and 'alpha' for the camera
         u_max_tracker = ValueTracker(-2.99)
-        
-        # cam_tracker controls the camera progress (0 to 1)
-        cam_tracker = ValueTracker(0.0)
+        cam_tracker   = ValueTracker(0.0)
 
-        # 3. Dynamic Surface & Scanner
+        # 3. Dynamic Surface
         def get_dynamic_surface():
             u_current = u_max_tracker.get_value()
             
-            # Dynamic resolution calculation
-            u_len = u_current - (-3)
-            total_len = 6
-            u_res = int((u_len / total_len) * 64)
-            u_res = max(4, u_res) 
+            # Dynamic Resolution Calculation:
+            # We want the resolution to match the final static surface (64) exactly
+            # when the animation finishes, to prevent a "pop" in geometry.
+            total_u_len = 6.0 # from -3 to 3
+            current_len = u_current - (-3)
+            
+            # Calculate proportional resolution
+            # If current_len is 3 (halfway), res is 32. At end, res is 64.
+            u_res = int((current_len / total_u_len) * 64)
+            u_res = max(4, u_res) # clamp minimum to avoid errors
             
             surface = Surface(
                 lambda u, v: axes.c2p(u, v, peaks_f(u, v)),
                 u_range=[-3, u_current],
                 v_range=[-3, 3],
-                resolution=(u_res, 64),
+                resolution=(u_res, 64), # Match v-res of static surface
             )
+            
+            # -----------------------------------------------------
+            # CRITICAL: Match Style to Scene 2
+            # Scene 2's static surface has fill_opacity=0.90
+            # -----------------------------------------------------
             surface.set_style(fill_opacity=0.90, stroke_width=0)
+            
             surface.set_fill_by_value(
                 axes=axes,
                 colors=[(BLUE_E, -8), (BLUE_C, 0), (GREEN_C, 4), (YELLOW_E, 8)],
@@ -137,22 +149,29 @@ class S01_SurfaceReveal(ThreeDScene):
 
         dynamic_surface = always_redraw(get_dynamic_surface)
 
+        # 4. Scanner Line (Optional visual flair)
+        # We fade this out right at the end to blend perfectly into static mesh
+        scanner_opacity = ValueTracker(0.8)
+
         def get_scanner_line():
             u_val = u_max_tracker.get_value()
+            opac = scanner_opacity.get_value()
+            
+            if u_val <= -2.9: return VGroup()
+            
             line = ParametricFunction(
                 lambda v: axes.c2p(u_val, v, peaks_f(u_val, v)),
                 t_range=[-3, 3],
                 color=WHITE
             )
-            line.set_stroke(width=2, opacity=0.8)
+            line.set_stroke(width=2, opacity=opac)
             return line
 
         scanner_line = always_redraw(get_scanner_line)
 
-        self.add(axes, axes_labels, dynamic_surface, scanner_line)
+        self.add(dynamic_surface, scanner_line)
 
-        # 4. Camera Updater Logic
-        # We attach a listener to a dummy object to update the camera every frame
+        # 5. Camera Updater (Smooth 3D motion)
         def update_camera(mob):
             alpha = cam_tracker.get_value()
             theta = interpolate(theta0, theta1, alpha)
@@ -163,17 +182,20 @@ class S01_SurfaceReveal(ThreeDScene):
         dummy_cam.add_updater(update_camera)
         self.add(dummy_cam)
 
-        # 5. Animate Both Simultaneously
-        animation_duration = 5.0
-        
+        # 6. Animation
+        # We slow it down to 8 seconds for a smooth feel
         self.play(
             u_max_tracker.animate.set_value(3.0),
             cam_tracker.animate.set_value(1.0),
-            run_time=animation_duration,
+            run_time=8.0,
             rate_func=smooth
         )
 
-        # 6. Handoff & Cleanup
+        # Fade out scanner line quickly at the very end so it doesn't get stuck
+        self.play(scanner_opacity.animate.set_value(0.0), run_time=0.5)
+
+        # 7. Seamless Handoff
+        # Remove dynamic elements and add static one
         dummy_cam.remove_updater(update_camera)
         self.remove(dummy_cam, dynamic_surface, scanner_line)
         self.add(static_surface)
@@ -188,61 +210,91 @@ class S02_PointAndHeight(ThreeDScene):
     def construct(self):
         axes, axes_labels, surface = build_world()
 
-        # MUST match end of Scene 1
+        # 1. Match End of Scene 1
         self.set_camera_orientation(phi=72*DEGREES, theta=25*DEGREES, zoom=1.02)
 
-
-        # Add surface immediately (no animation, we’re stitching from last scene)
+        # Add surface immediately (stitching from Scene 1)
         self.add(surface)
 
-        # --- Floor (xy-plane at z=0) ---
+        # -----------------------------------------------------
+        # 2. The Red "Slope" Arrow (Before Axes)
+        # -----------------------------------------------------
+        # Pick a spot with a visible slope relative to camera
+        u_slope, v_slope = -0.5, -1.2 
+        z_slope = peaks_f(u_slope, v_slope)
+        
+        # Calculate Gradient (Direction of steepest ascent)
+        gu, gv = grad_numeric(peaks_f, u_slope, v_slope)
+        
+        # Normalize to get a clean direction vector
+        g_norm = np.linalg.norm([gu, gv])
+        dx, dy = gu / g_norm, gv / g_norm
+        
+        # Create the arrow lying on the surface
+        slope_arrow = tangent_arrow(
+            axes, u_slope, v_slope, z_slope, 
+            gu, gv, dx, dy, 
+            length=1.5, 
+            color=RED, 
+            thickness=0.04
+        )
+
+        # Animate the arrow growing "up" the hill
+        self.play(GrowArrow(slope_arrow), run_time=1.0)
+        self.wait(0.5)
+
+        # -----------------------------------------------------
+        # 3. Bring in the World (Axes + Floor)
+        # -----------------------------------------------------
+        
+        # Floor (xy-plane at z=0)
         floor = Surface(
-            lambda u, v: axes.c2p(u, v, -0.02),   # tiny offset prevents flicker / z-fighting
+            lambda u, v: axes.c2p(u, v, -0.02),
             u_range=[-3, 3],
             v_range=[-3, 3],
             resolution=(2, 2),
-        ).set_style(fill_opacity=0.35, fill_color=GRAY_E, stroke_width=0)
-
+        )
         floor.set_style(fill_opacity=0.20, fill_color=GRAY_D, stroke_width=0)
 
-        # Add floor under the surface visually
-        self.add(floor)
-
-        # --- Axes grow in (instead of fade) ---
-        # Create(axes) gives the “drawing/growing” feel.
-        self.play(Create(axes), run_time=1.2)
+        # Fade in floor and grow axes
+        self.play(
+            FadeIn(floor),
+            Create(axes),
+            FadeOut(slope_arrow), # Optional: Remove arrow to clear clutter
+            run_time=1.5
+        )
         self.play(FadeIn(axes_labels), run_time=0.6)
 
-        # Choose point (make sure z0 is above floor for the visual to read well)
+        # -----------------------------------------------------
+        # 4. Specific Point Analysis (The original logic)
+        # -----------------------------------------------------
         u0, v0 = 0.9, 1.2
         z0 = peaks_f(u0, v0)
 
-
-        p_ground = axes.c2p(u0, v0, 0)
+        p_ground  = axes.c2p(u0, v0, 0)
         p_surface = axes.c2p(u0, v0, z0)
 
-        ground_dot = Dot3D(p_ground, radius=0.06, color=WHITE)
-        surf_dot   = Dot3D(p_surface, radius=0.07, color=WHITE)
+        ground_dot  = Dot3D(p_ground, radius=0.06, color=WHITE)
+        surf_dot    = Dot3D(p_surface, radius=0.07, color=WHITE)
         height_line = DashedLine(p_ground, p_surface, dash_length=0.08).set_color(GRAY_B)
 
         val_label = DecimalNumber(z0, num_decimal_places=2).scale(0.5).set_color(WHITE)
         val_label.next_to(surf_dot, UR, buff=0.15)
 
-        # --- Dim surface so the dots/line read clearly ---
-        self.play(surface.animate.set_style(fill_opacity=0.25, stroke_width=0), run_time=0.6)
+        # Dim surface to focus on the new point
+        self.play(surface.animate.set_style(fill_opacity=0.25, stroke_width=0), run_time=0.8)
 
-        # --- Bring in dot + line up to surface ---
+        # Show point elements
         self.play(FadeIn(ground_dot), run_time=0.3)
         self.play(Create(height_line), run_time=0.6)
         self.play(FadeIn(surf_dot), FadeIn(val_label), run_time=0.5)
 
-        # --- Restore surface look ---
-        self.play(surface.animate.set_style(fill_opacity=0.95, stroke_width=0), run_time=0.7)
+        # Restore surface opacity
+        self.play(surface.animate.set_style(fill_opacity=0.95, stroke_width=0), run_time=0.8)
 
-        # Nice camera move toward the point (optional)
-        self.move_camera(phi=68*DEGREES, theta=-20*DEGREES, zoom=1.20, run_time=1.4)
-        self.wait(0.8)
-
+        # Final camera move
+        self.move_camera(phi=68*DEGREES, theta=-20*DEGREES, zoom=1.20, run_time=2.0)
+        self.wait(1.0)
 
 # ---------------------------
 # Scene 3: Tangent patch + many slopes
