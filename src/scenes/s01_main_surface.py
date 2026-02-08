@@ -92,35 +92,93 @@ def build_surface(axes):
 
 class S01_SurfaceReveal(ThreeDScene):
     def construct(self):
-        axes, axes_labels, surface = build_world()
+        # 1. Setup
+        axes, axes_labels, static_surface = build_world()
+        
+        # Camera configs
+        phi    = 72 * DEGREES
+        theta0 = -35 * DEGREES
+        theta1 = 25 * DEGREES
+        zoom0  = 0.90
+        zoom1  = 1.02
+        
+        self.set_camera_orientation(phi=phi, theta=theta0, zoom=zoom0)
 
-        # Pick an end pose you like — this will be the start of Scene 2.
-        phi_end   = 72 * DEGREES
-        theta_end = 25 * DEGREES     # <-- choose your "corner"
-        zoom_end  = 1.02
+        # 2. Trackers
+        # u_tracker controls the surface growth
+        u_max_tracker = ValueTracker(-2.99)
+        
+        # cam_tracker controls the camera progress (0 to 1)
+        cam_tracker = ValueTracker(0.0)
 
-        # Start pose (can be different)
-        self.set_camera_orientation(phi=72*DEGREES, theta=-35*DEGREES, zoom=0.90)
+        # 3. Dynamic Surface & Scanner
+        def get_dynamic_surface():
+            u_current = u_max_tracker.get_value()
+            
+            # Dynamic resolution calculation
+            u_len = u_current - (-3)
+            total_len = 6
+            u_res = int((u_len / total_len) * 64)
+            u_res = max(4, u_res) 
+            
+            surface = Surface(
+                lambda u, v: axes.c2p(u, v, peaks_f(u, v)),
+                u_range=[-3, u_current],
+                v_range=[-3, 3],
+                resolution=(u_res, 64),
+            )
+            surface.set_style(fill_opacity=0.90, stroke_width=0)
+            surface.set_fill_by_value(
+                axes=axes,
+                colors=[(BLUE_E, -8), (BLUE_C, 0), (GREEN_C, 4), (YELLOW_E, 8)],
+                axis=2,
+            )
+            return surface
 
-        # Start ambient rotation BEFORE surface appears
-        self.begin_ambient_camera_rotation(rate=0.10)
+        dynamic_surface = always_redraw(get_dynamic_surface)
 
-        # Generate slower while spinning
-        self.play(Create(surface), run_time=6.0, rate_func=smooth)
+        def get_scanner_line():
+            u_val = u_max_tracker.get_value()
+            line = ParametricFunction(
+                lambda v: axes.c2p(u_val, v, peaks_f(u_val, v)),
+                t_range=[-3, 3],
+                color=WHITE
+            )
+            line.set_stroke(width=2, opacity=0.8)
+            return line
 
-        # Keep spinning longer
-        self.wait(6.0)
+        scanner_line = always_redraw(get_scanner_line)
 
-        # Zoom while still spinning (separate call; can't be in AnimationGroup)
-        self.move_camera(zoom=zoom_end, run_time=1.6)
-        self.wait(1.5)
+        self.add(axes, axes_labels, dynamic_surface, scanner_line)
 
-        # Stop ambient rotation and "lock" to a deterministic handoff pose (NO revert)
-        self.stop_ambient_camera_rotation()
-        self.move_camera(phi=phi_end, theta=theta_end, zoom=zoom_end, run_time=1.0)
+        # 4. Camera Updater Logic
+        # We attach a listener to a dummy object to update the camera every frame
+        def update_camera(mob):
+            alpha = cam_tracker.get_value()
+            theta = interpolate(theta0, theta1, alpha)
+            zoom  = interpolate(zoom0, zoom1, alpha)
+            self.set_camera_orientation(phi=phi, theta=theta, zoom=zoom)
 
-        # Hold for clean stitch
-        self.wait(0.8)
+        dummy_cam = Mobject()
+        dummy_cam.add_updater(update_camera)
+        self.add(dummy_cam)
+
+        # 5. Animate Both Simultaneously
+        animation_duration = 5.0
+        
+        self.play(
+            u_max_tracker.animate.set_value(3.0),
+            cam_tracker.animate.set_value(1.0),
+            run_time=animation_duration,
+            rate_func=smooth
+        )
+
+        # 6. Handoff & Cleanup
+        dummy_cam.remove_updater(update_camera)
+        self.remove(dummy_cam, dynamic_surface, scanner_line)
+        self.add(static_surface)
+        
+        self.wait(1.0)
 
 # ---------------------------
 # Scene 2: Axes + point + height
@@ -132,6 +190,7 @@ class S02_PointAndHeight(ThreeDScene):
 
         # MUST match end of Scene 1
         self.set_camera_orientation(phi=72*DEGREES, theta=25*DEGREES, zoom=1.02)
+
 
         # Add surface immediately (no animation, we’re stitching from last scene)
         self.add(surface)
@@ -155,8 +214,9 @@ class S02_PointAndHeight(ThreeDScene):
         self.play(FadeIn(axes_labels), run_time=0.6)
 
         # Choose point (make sure z0 is above floor for the visual to read well)
-        u0, v0 = 0.8, -0.3
+        u0, v0 = 0.9, 1.2
         z0 = peaks_f(u0, v0)
+
 
         p_ground = axes.c2p(u0, v0, 0)
         p_surface = axes.c2p(u0, v0, z0)
@@ -200,7 +260,7 @@ class S03_DirectionalSlopes(ThreeDScene):
         self.add(surface, axes, axes_labels)
 
         # Point
-        u0, v0 = 0.8, -0.3
+        u0, v0 = 0.9, 0.8
         z0 = peaks_f(u0, v0)
         p_surface = axes.c2p(u0, v0, z0)
         surf_dot = Dot3D(p_surface, radius=0.07, color=WHITE)
@@ -259,7 +319,7 @@ class S04_GradientOverlap(ThreeDScene):
         axes_labels.set_opacity(0.6)
         self.add(surface, axes, axes_labels)
 
-        u0, v0 = 0.8, -0.3
+        u0, v0 = 0.9, 0.8
         z0 = peaks_f(u0, v0)
         fu, fv = grad_numeric(peaks_f, u0, v0)
 
