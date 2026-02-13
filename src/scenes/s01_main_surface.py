@@ -202,6 +202,127 @@ class S01_SurfaceReveal(ThreeDScene):
         
         self.wait(1.0)
 
+class S01_5_Transition(ThreeDScene):
+    def construct(self):
+        axes, axes_labels, surface = build_world()
+
+        # -----------------------------------------------------
+        # 1. Match End of Scene 1
+        # -----------------------------------------------------
+        # Start exactly where Scene 1 left off
+        self.set_camera_orientation(phi=72 * DEGREES, theta=25 * DEGREES, zoom=1.02)
+        
+        # We only need the surface for this cinematic shot
+        # (Axes are hidden to keep it abstract/clean)
+        self.add(surface)
+
+        # -----------------------------------------------------
+        # 2. Camera Move to Target
+        # -----------------------------------------------------
+        # Target point in positive octant
+        u0, v0 = 1.2, 1.0
+        z0 = peaks_f(u0, v0)
+        p_focus = axes.c2p(u0, v0, z0)
+
+        # Move camera to center on this point while rotating slightly
+        self.play(
+            self.camera.frame.animate.move_to(p_focus),
+            self.camera.frame.animate.set_theta(15 * DEGREES).set_zoom(1.4),
+            run_time=2.5,
+            rate_func=smooth
+        )
+
+        # -----------------------------------------------------
+        # 3. The "Ripple" Halo Effect
+        # -----------------------------------------------------
+        # We create a circle lying on the surface that expands
+        radius_tracker = ValueTracker(0.0)
+        opacity_tracker = ValueTracker(1.0)
+
+        def get_ripple():
+            r = radius_tracker.get_value()
+            opac = opacity_tracker.get_value()
+            if r < 0.01: return VGroup()
+            
+            # Parametric circle on the surface
+            ring = ParametricFunction(
+                lambda t: axes.c2p(
+                    u0 + r * np.cos(t), 
+                    v0 + r * np.sin(t), 
+                    peaks_f(u0 + r * np.cos(t), v0 + r * np.sin(t))
+                ),
+                t_range=[0, TAU],
+                color=WHITE
+            )
+            ring.set_stroke(width=3, opacity=opac)
+            return ring
+
+        ripple = always_redraw(get_ripple)
+        
+        # Dot at the center
+        dot = Dot3D(axes.c2p(u0, v0, z0), radius=0.05, color=WHITE)
+
+        self.add(ripple, dot)
+        self.play(FadeIn(dot, scale=0.5), run_time=0.3)
+        
+        # Expand ripple and fade out
+        self.play(
+            radius_tracker.animate.set_value(0.6),
+            opacity_tracker.animate.set_value(0.0),
+            run_time=1.5,
+            rate_func=linear
+        )
+        self.remove(ripple) # cleanup
+
+        # -----------------------------------------------------
+        # 4. Directional Arrows (Clockwise: Right, Down, Left, Up)
+        # -----------------------------------------------------
+        # Calculate gradients for tangent plane logic
+        fu, fv = grad_numeric(peaks_f, u0, v0)
+
+        # Directions: (dx, dy)
+        directions = [
+            (1, 0),   # Right
+            (0, -1),  # Down
+            (-1, 0),  # Left
+            (0, 1)    # Up (Uphill)
+        ]
+
+        arrows = []
+        for i, (dx, dy) in enumerate(directions):
+            # Make the "Up" arrow (last one) significantly longer
+            length = 1.3 if i == 3 else 0.7
+            
+            arr = tangent_arrow(
+                axes, u0, v0, z0, fu, fv, dx, dy, 
+                length=length, 
+                color=RED, 
+                thickness=0.03
+            )
+            arrows.append(arr)
+
+        # Animate them appearing clockwise
+        # We use LaggedStart for a satisfying "pop-pop-pop-pop" feel
+        self.play(
+            LaggedStart(
+                *[GrowFromPoint(arr, p_focus) for arr in arrows],
+                lag_ratio=0.2
+            ),
+            run_time=1.2
+        )
+        
+        self.wait(0.5)
+
+        # -----------------------------------------------------
+        # 5. Fade Out Everything
+        # -----------------------------------------------------
+        self.play(
+            FadeOut(surface),
+            FadeOut(dot),
+            *[FadeOut(arr) for arr in arrows],
+            run_time=1.5
+        )
+
 # ---------------------------
 # Scene 2: Axes + point + height
 # ---------------------------
@@ -213,24 +334,23 @@ class S02_PointAndHeight(ThreeDScene):
         # 1. Match End of Scene 1
         self.set_camera_orientation(phi=72*DEGREES, theta=25*DEGREES, zoom=1.02)
 
-        # Add surface immediately (stitching from Scene 1)
+        # Add surface immediately
         self.add(surface)
 
         # -----------------------------------------------------
         # 2. The Red "Slope" Arrow (Before Axes)
         # -----------------------------------------------------
-        # Pick a spot with a visible slope relative to camera
         u_slope, v_slope = -0.5, -1.2 
         z_slope = peaks_f(u_slope, v_slope)
         
-        # Calculate Gradient (Direction of steepest ascent)
-        gu, gv = grad_numeric(peaks_f, u_slope, v_slope)
+        # Calculate start point explicitly for the animation
+        p_arrow_start = axes.c2p(u_slope, v_slope, z_slope)
         
-        # Normalize to get a clean direction vector
+        # Calculate Gradient direction
+        gu, gv = grad_numeric(peaks_f, u_slope, v_slope)
         g_norm = np.linalg.norm([gu, gv])
         dx, dy = gu / g_norm, gv / g_norm
         
-        # Create the arrow lying on the surface
         slope_arrow = tangent_arrow(
             axes, u_slope, v_slope, z_slope, 
             gu, gv, dx, dy, 
@@ -239,15 +359,15 @@ class S02_PointAndHeight(ThreeDScene):
             thickness=0.04
         )
 
-        # Animate the arrow growing "up" the hill
-        self.play(GrowArrow(slope_arrow), run_time=1.0)
+        # FIX: Use GrowFromPoint instead of GrowArrow
+        # This avoids the 'scale_tips' error while keeping the growing effect.
+        self.play(GrowFromPoint(slope_arrow, p_arrow_start), run_time=1.0)
         self.wait(0.5)
 
         # -----------------------------------------------------
         # 3. Bring in the World (Axes + Floor)
         # -----------------------------------------------------
         
-        # Floor (xy-plane at z=0)
         floor = Surface(
             lambda u, v: axes.c2p(u, v, -0.02),
             u_range=[-3, 3],
@@ -256,14 +376,44 @@ class S02_PointAndHeight(ThreeDScene):
         )
         floor.set_style(fill_opacity=0.20, fill_color=GRAY_D, stroke_width=0)
 
-        # Fade in floor and grow axes
         self.play(
             FadeIn(floor),
             Create(axes),
-            FadeOut(slope_arrow), # Optional: Remove arrow to clear clutter
+            FadeOut(slope_arrow),
             run_time=1.5
         )
         self.play(FadeIn(axes_labels), run_time=0.6)
+
+        # -----------------------------------------------------
+        # 4. Specific Point Analysis
+        # -----------------------------------------------------
+        u0, v0 = 0.9, 1.2
+        z0 = peaks_f(u0, v0)
+
+        p_ground  = axes.c2p(u0, v0, 0)
+        p_surface = axes.c2p(u0, v0, z0)
+
+        ground_dot  = Dot3D(p_ground, radius=0.06, color=WHITE)
+        surf_dot    = Dot3D(p_surface, radius=0.07, color=WHITE)
+        height_line = DashedLine(p_ground, p_surface, dash_length=0.08).set_color(GRAY_B)
+
+        val_label = DecimalNumber(z0, num_decimal_places=2).scale(0.5).set_color(WHITE)
+        val_label.next_to(surf_dot, UR, buff=0.15)
+
+        # Dim surface to focus on the new point
+        self.play(surface.animate.set_style(fill_opacity=0.25, stroke_width=0), run_time=0.8)
+
+        # Show point elements
+        self.play(FadeIn(ground_dot), run_time=0.3)
+        self.play(Create(height_line), run_time=0.6)
+        self.play(FadeIn(surf_dot), FadeIn(val_label), run_time=0.5)
+
+        # Restore surface opacity
+        self.play(surface.animate.set_style(fill_opacity=0.95, stroke_width=0), run_time=0.8)
+
+        # Final camera move
+        self.move_camera(phi=68*DEGREES, theta=-20*DEGREES, zoom=1.20, run_time=2.0)
+        self.wait(1.0)
 
         # -----------------------------------------------------
         # 4. Specific Point Analysis (The original logic)
