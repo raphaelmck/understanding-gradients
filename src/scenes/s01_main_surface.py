@@ -206,36 +206,24 @@ class S01_5_Transition(ThreeDScene):
     def construct(self):
         axes, axes_labels, surface = build_world()
 
-        # -----------------------------------------------------
         # 1. Match End of Scene 1
-        # -----------------------------------------------------
-        # Start exactly where Scene 1 left off
         self.set_camera_orientation(phi=72 * DEGREES, theta=25 * DEGREES, zoom=1.02)
-        
-        # We only need the surface for this cinematic shot
-        # (Axes are hidden to keep it abstract/clean)
         self.add(surface)
 
-        # -----------------------------------------------------
         # 2. Camera Move to Target
-        # -----------------------------------------------------
-        # Target point in positive octant
         u0, v0 = 1.2, 1.0
         z0 = peaks_f(u0, v0)
         p_focus = axes.c2p(u0, v0, z0)
 
-        # Move camera to center on this point while rotating slightly
-        self.play(
-            self.camera.frame.animate.move_to(p_focus),
-            self.camera.frame.animate.set_theta(15 * DEGREES).set_zoom(1.4),
+        self.move_camera(
+            theta=15 * DEGREES,
+            zoom=1.4,
+            focal_point=p_focus,
             run_time=2.5,
             rate_func=smooth
         )
 
-        # -----------------------------------------------------
-        # 3. The "Ripple" Halo Effect
-        # -----------------------------------------------------
-        # We create a circle lying on the surface that expands
+        # 3. Ripple Effect
         radius_tracker = ValueTracker(0.0)
         opacity_tracker = ValueTracker(1.0)
 
@@ -244,7 +232,6 @@ class S01_5_Transition(ThreeDScene):
             opac = opacity_tracker.get_value()
             if r < 0.01: return VGroup()
             
-            # Parametric circle on the surface
             ring = ParametricFunction(
                 lambda t: axes.c2p(
                     u0 + r * np.cos(t), 
@@ -258,51 +245,39 @@ class S01_5_Transition(ThreeDScene):
             return ring
 
         ripple = always_redraw(get_ripple)
-        
-        # Dot at the center
-        dot = Dot3D(axes.c2p(u0, v0, z0), radius=0.05, color=WHITE)
+        dot = Dot3D(p_focus, radius=0.05, color=WHITE)
 
         self.add(ripple, dot)
         self.play(FadeIn(dot, scale=0.5), run_time=0.3)
         
-        # Expand ripple and fade out
         self.play(
             radius_tracker.animate.set_value(0.6),
             opacity_tracker.animate.set_value(0.0),
             run_time=1.5,
             rate_func=linear
         )
-        self.remove(ripple) # cleanup
+        self.remove(ripple)
 
-        # -----------------------------------------------------
-        # 4. Directional Arrows (Clockwise: Right, Down, Left, Up)
-        # -----------------------------------------------------
-        # Calculate gradients for tangent plane logic
+        # 4. Minimalist Directional Arrows
         fu, fv = grad_numeric(peaks_f, u0, v0)
 
-        # Directions: (dx, dy)
         directions = [
             (1, 0),   # Right
             (0, -1),  # Down
             (-1, 0),  # Left
-            (0, 1)    # Up (Uphill)
+            (0, 1)    # Up 
         ]
 
         arrows = []
-        for i, (dx, dy) in enumerate(directions):
-            # Make the "Up" arrow (last one) significantly longer
-            length = 1.3 if i == 3 else 0.7
-            
+        for (dx, dy) in directions:
             arr = tangent_arrow(
                 axes, u0, v0, z0, fu, fv, dx, dy, 
-                length=length, 
+                length=0.8,         # Uniform size
                 color=RED, 
-                thickness=0.03
+                thickness=0.015     # Thin
             )
             arrows.append(arr)
 
-        # Animate them appearing clockwise
-        # We use LaggedStart for a satisfying "pop-pop-pop-pop" feel
         self.play(
             LaggedStart(
                 *[GrowFromPoint(arr, p_focus) for arr in arrows],
@@ -313,16 +288,14 @@ class S01_5_Transition(ThreeDScene):
         
         self.wait(0.5)
 
-        # -----------------------------------------------------
-        # 5. Fade Out Everything
-        # -----------------------------------------------------
+        # 5. Fade Out ONLY Dot and Arrows (Surface stays)
         self.play(
-            FadeOut(surface),
             FadeOut(dot),
             *[FadeOut(arr) for arr in arrows],
             run_time=1.5
         )
-
+        self.wait(0.5)
+        
 # ---------------------------
 # Scene 2: Axes + point + height
 # ---------------------------
