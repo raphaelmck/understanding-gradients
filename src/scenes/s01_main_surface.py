@@ -295,7 +295,7 @@ class S01_5_Transition(ThreeDScene):
             run_time=1.5
         )
         self.wait(0.5)
-        
+
 # ---------------------------
 # Scene 2: Axes + point + height
 # ---------------------------
@@ -304,43 +304,28 @@ class S02_PointAndHeight(ThreeDScene):
     def construct(self):
         axes, axes_labels, surface = build_world()
 
-        # 1. Match End of Scene 1
-        self.set_camera_orientation(phi=72*DEGREES, theta=25*DEGREES, zoom=1.02)
+        # -----------------------------------------------------
+        # 1. Exact Match with Scene 1.5 End State
+        # -----------------------------------------------------
+        # The camera ended looking at the previous point (1.2, 1.0)
+        u_prev, v_prev = 1.2, 1.0
+        z_prev = peaks_f(u_prev, v_prev)
+        p_prev_focus = axes.c2p(u_prev, v_prev, z_prev)
 
-        # Add surface immediately
+        # Set initial camera to match Scene 1.5 exactly
+        self.set_camera_orientation(
+            phi=72 * DEGREES, 
+            theta=15 * DEGREES, 
+            zoom=1.4, 
+            focal_point=p_prev_focus
+        )
+
         self.add(surface)
 
         # -----------------------------------------------------
-        # 2. The Red "Slope" Arrow (Before Axes)
+        # 2. Contextual Reveal (Axes & Floor)
         # -----------------------------------------------------
-        u_slope, v_slope = -0.5, -1.2 
-        z_slope = peaks_f(u_slope, v_slope)
-        
-        # Calculate start point explicitly for the animation
-        p_arrow_start = axes.c2p(u_slope, v_slope, z_slope)
-        
-        # Calculate Gradient direction
-        gu, gv = grad_numeric(peaks_f, u_slope, v_slope)
-        g_norm = np.linalg.norm([gu, gv])
-        dx, dy = gu / g_norm, gv / g_norm
-        
-        slope_arrow = tangent_arrow(
-            axes, u_slope, v_slope, z_slope, 
-            gu, gv, dx, dy, 
-            length=1.5, 
-            color=RED, 
-            thickness=0.04
-        )
-
-        # FIX: Use GrowFromPoint instead of GrowArrow
-        # This avoids the 'scale_tips' error while keeping the growing effect.
-        self.play(GrowFromPoint(slope_arrow, p_arrow_start), run_time=1.0)
-        self.wait(0.5)
-
-        # -----------------------------------------------------
-        # 3. Bring in the World (Axes + Floor)
-        # -----------------------------------------------------
-        
+        # Create floor/axes invisible first
         floor = Surface(
             lambda u, v: axes.c2p(u, v, -0.02),
             u_range=[-3, 3],
@@ -348,48 +333,30 @@ class S02_PointAndHeight(ThreeDScene):
             resolution=(2, 2),
         )
         floor.set_style(fill_opacity=0.20, fill_color=GRAY_D, stroke_width=0)
-
+        
+        # Fade them in while we are still zoomed in on the previous spot
         self.play(
             FadeIn(floor),
             Create(axes),
-            FadeOut(slope_arrow),
             run_time=1.5
         )
-        self.play(FadeIn(axes_labels), run_time=0.6)
+        self.play(FadeIn(axes_labels), run_time=0.5)
 
         # -----------------------------------------------------
-        # 4. Specific Point Analysis
+        # 3. The "Pull Back" (Context)
         # -----------------------------------------------------
-        u0, v0 = 0.9, 1.2
-        z0 = peaks_f(u0, v0)
-
-        p_ground  = axes.c2p(u0, v0, 0)
-        p_surface = axes.c2p(u0, v0, z0)
-
-        ground_dot  = Dot3D(p_ground, radius=0.06, color=WHITE)
-        surf_dot    = Dot3D(p_surface, radius=0.07, color=WHITE)
-        height_line = DashedLine(p_ground, p_surface, dash_length=0.08).set_color(GRAY_B)
-
-        val_label = DecimalNumber(z0, num_decimal_places=2).scale(0.5).set_color(WHITE)
-        val_label.next_to(surf_dot, UR, buff=0.15)
-
-        # Dim surface to focus on the new point
-        self.play(surface.animate.set_style(fill_opacity=0.25, stroke_width=0), run_time=0.8)
-
-        # Show point elements
-        self.play(FadeIn(ground_dot), run_time=0.3)
-        self.play(Create(height_line), run_time=0.6)
-        self.play(FadeIn(surf_dot), FadeIn(val_label), run_time=0.5)
-
-        # Restore surface opacity
-        self.play(surface.animate.set_style(fill_opacity=0.95, stroke_width=0), run_time=0.8)
-
-        # Final camera move
-        self.move_camera(phi=68*DEGREES, theta=-20*DEGREES, zoom=1.20, run_time=2.0)
-        self.wait(1.0)
+        # Pull back to see the whole graph and center the view
+        self.move_camera(
+            phi=65 * DEGREES,
+            theta=-35 * DEGREES,
+            zoom=0.8,
+            focal_point=axes.c2p(0, 0, 0), # Reset focus to Origin
+            run_time=2.5,
+            rate_func=smooth
+        )
 
         # -----------------------------------------------------
-        # 4. Specific Point Analysis (The original logic)
+        # 4. Highlight the New Point
         # -----------------------------------------------------
         u0, v0 = 0.9, 1.2
         z0 = peaks_f(u0, v0)
@@ -400,14 +367,13 @@ class S02_PointAndHeight(ThreeDScene):
         ground_dot  = Dot3D(p_ground, radius=0.06, color=WHITE)
         surf_dot    = Dot3D(p_surface, radius=0.07, color=WHITE)
         height_line = DashedLine(p_ground, p_surface, dash_length=0.08).set_color(GRAY_B)
-
+        
         val_label = DecimalNumber(z0, num_decimal_places=2).scale(0.5).set_color(WHITE)
         val_label.next_to(surf_dot, UR, buff=0.15)
 
-        # Dim surface to focus on the new point
+        # Dim surface briefly to show the height line clearly
         self.play(surface.animate.set_style(fill_opacity=0.25, stroke_width=0), run_time=0.8)
 
-        # Show point elements
         self.play(FadeIn(ground_dot), run_time=0.3)
         self.play(Create(height_line), run_time=0.6)
         self.play(FadeIn(surf_dot), FadeIn(val_label), run_time=0.5)
@@ -415,8 +381,21 @@ class S02_PointAndHeight(ThreeDScene):
         # Restore surface opacity
         self.play(surface.animate.set_style(fill_opacity=0.95, stroke_width=0), run_time=0.8)
 
-        # Final camera move
-        self.move_camera(phi=68*DEGREES, theta=-20*DEGREES, zoom=1.20, run_time=2.0)
+        # -----------------------------------------------------
+        # 5. Final Move: Zoom onto the Point (Setup for Derivative)
+        # -----------------------------------------------------
+        # Voiceover: "Now what we want is local steepest ascent: at one point..."
+        # We zoom in very close to p_surface to isolate the "slope"
+        
+        self.move_camera(
+            phi=55 * DEGREES,       # Slightly lower angle to see the "hill"
+            theta=-15 * DEGREES,    # Rotate to a clear profile view of the slope
+            zoom=1.9,               # Significant zoom in
+            focal_point=p_surface,  # Focus EXACTLY on the dot
+            run_time=3.0,
+            rate_func=smooth
+        )
+        
         self.wait(1.0)
 
 # ---------------------------
