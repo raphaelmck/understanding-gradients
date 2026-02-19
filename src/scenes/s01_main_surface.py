@@ -398,154 +398,96 @@ class S02_PointAndHeight(ThreeDScene):
         
         self.wait(1.0)
 
-# ---------------------------
-# Scene 3: Tangent patch + many slopes
-# ---------------------------
-
-class S03_DirectionalSlopes(ThreeDScene):
+class S02_5_DerivativeOverlay(Scene):
     def construct(self):
-        axes, axes_labels, surface = build_world()
-        self.set_camera_orientation(phi=68 * DEGREES, theta=-20 * DEGREES, zoom=1.25)
+        # -----------------------------------------------------
+        # Setup: Transparent Background
+        # -----------------------------------------------------
+        # Render with '-t' flag: manim -ql -t file.py S02_5_DerivativeOverlay
+        self.camera.background_color = "#00000000"
 
-        # Keep axes optional here; I like them faint
-        axes.set_opacity(0.65)
-        axes_labels.set_opacity(0.65)
+        # 1. Define Axes
+        axes = Axes(
+            x_range=[-1, 6], 
+            y_range=[-1, 5], 
+            x_length=8, 
+            y_length=5,
+            axis_config={"color": GRAY_C, "stroke_width": 2, "include_tip": True}
+        ).to_edge(DOWN, buff=1.0)
 
-        self.add(surface, axes, axes_labels)
+        # 2. Define a "Curvier" Function
+        # y = 1.5 * sin(0.8x) + 2
+        # This provides a nice tall hill shape
+        def func_val(x):
+            return 1.5 * np.sin(0.8 * x) + 2.0
 
-        # Point
-        u0, v0 = 0.9, 0.8
-        z0 = peaks_f(u0, v0)
-        p_surface = axes.c2p(u0, v0, z0)
-        surf_dot = Dot3D(p_surface, radius=0.07, color=WHITE)
-        self.add(surf_dot)
+        graph = axes.plot(func_val, x_range=[-0.5, 5.5], color=BLUE, stroke_width=5)
+        graph_label = axes.get_graph_label(graph, label="f(x)", x_val=5.5, direction=RIGHT)
 
-        # Tangent plane patch
-        fu, fv = grad_numeric(peaks_f, u0, v0)
+        # 3. Define Points (Far apart to avoid intersection)
+        
+        # Point 1: Ascent (Left side)
+        x1 = 0.8
+        y1 = func_val(x1)
+        p1 = axes.c2p(x1, y1)
+        dot1 = Dot(p1, color=GREEN, radius=0.12)
+        
+        # Point 2: Descent (Right side)
+        x2 = 3.5
+        y2 = func_val(x2)
+        p2 = axes.c2p(x2, y2)
+        dot2 = Dot(p2, color=RED, radius=0.12)
 
-        plane = Surface(
-            lambda a, b: axes.c2p(a, b, z0 + fu * (a - u0) + fv * (b - v0)),
-            u_range=[u0 - 0.75, u0 + 0.75],
-            v_range=[v0 - 0.75, v0 + 0.75],
-            resolution=(10, 10),
-        )
-        plane.set_style(fill_opacity=0.25, fill_color=WHITE, stroke_width=0)
+        # 4. Tangent Line Helper
+        def create_tangent(x, point, color):
+            # Calculate angle numerically
+            dt = 0.001
+            p_curr = axes.c2p(x, func_val(x))
+            p_next = axes.c2p(x + dt, func_val(x + dt))
+            angle = angle_of_vector(p_next - p_curr)
+            
+            # Create line centered on point
+            line = Line(LEFT, RIGHT, color=color, stroke_width=4).set_length(2.5)
+            line.rotate(angle)
+            line.move_to(point)
+            return line
 
-        self.play(FadeIn(plane), run_time=0.7)
+        tangent1 = create_tangent(x1, p1, GREEN)
+        tangent2 = create_tangent(x2, p2, RED)
 
-        # A few directions + labels
-        dirs = [(1, 0), (0.4, 1), (-1, 0.2), (0.2, -1)]
-        arrows = VGroup()
-        labels = VGroup()
+        # 5. Labels
+        label1 = Text("Slope > 0", font_size=28, color=GREEN).next_to(tangent1, UP+LEFT, buff=0.2)
+        label2 = Text("Slope < 0", font_size=28, color=RED).next_to(tangent2, UP+RIGHT, buff=0.2)
 
-        for (dx, dy) in dirs:
-            arr = tangent_arrow(axes, u0, v0, z0, fu, fv, dx, dy, length=0.85, color=BLUE_B)
-            s = dir_slope(fu, fv, dx, dy)
-            lab = DecimalNumber(s, num_decimal_places=2).scale(0.35).set_color(WHITE)
-            lab.move_to(arr.get_end() + 0.18 * UP)
-            arrows.add(arr)
-            labels.add(lab)
+        # Grouping for clean fade out later
+        full_group = VGroup(axes, graph, graph_label, dot1, dot2, tangent1, tangent2, label1, label2)
 
-        # Camera drift while arrows appear
-        self.play(
-            AnimationGroup(
-                LaggedStart(*[Create(a) for a in arrows], lag_ratio=0.12),
-                self.camera.frame.animate.set_width(self.camera.frame.get_width() * 0.94),
-                run_time=1.2,
-            )
-        )
-        self.play(FadeIn(labels), run_time=0.5)
+        # -----------------------------------------------------
+        # Animation Sequence (Spaced Out)
+        # -----------------------------------------------------
 
-        # Gentle orbit around the patch (tiny, not distracting)
-        self.move_camera(theta=-8 * DEGREES, run_time=1.0)  # relative feel
-        self.wait(0.8)
-
-# ---------------------------
-# Scene 4: Collapse to gradient + rotating direction + dot product HUD
-# ---------------------------
-
-class S04_GradientOverlap(ThreeDScene):
-    def construct(self):
-        axes, axes_labels, surface = build_world()
-        self.set_camera_orientation(phi=68 * DEGREES, theta=-20 * DEGREES, zoom=1.25)
-
-        axes.set_opacity(0.6)
-        axes_labels.set_opacity(0.6)
-        self.add(surface, axes, axes_labels)
-
-        u0, v0 = 0.9, 0.8
-        z0 = peaks_f(u0, v0)
-        fu, fv = grad_numeric(peaks_f, u0, v0)
-
-        # Dot + tangent patch
-        p_surface = axes.c2p(u0, v0, z0)
-        surf_dot = Dot3D(p_surface, radius=0.07, color=WHITE)
-
-        plane = Surface(
-            lambda a, b: axes.c2p(a, b, z0 + fu * (a - u0) + fv * (b - v0)),
-            u_range=[u0 - 0.75, u0 + 0.75],
-            v_range=[v0 - 0.75, v0 + 0.75],
-            resolution=(10, 10),
-        )
-        plane.set_style(fill_opacity=0.25, fill_color=WHITE, stroke_width=0)
-
-        self.add(plane, surf_dot)
-
-        # Gradient direction
-        gxy = np.array([fu, fv], dtype=float)
-        gxy_norm = np.linalg.norm(gxy)
-        g_dir = np.array([1.0, 0.0]) if gxy_norm < 1e-9 else (gxy / gxy_norm)
-
-        grad_arrow = tangent_arrow(axes, u0, v0, z0, fu, fv, g_dir[0], g_dir[1], length=1.05, color=YELLOW, thickness=0.03)
-        grad_label = MathTex(r"\nabla f").scale(0.6).set_color(YELLOW)
-        grad_label.move_to(grad_arrow.get_end() + 0.22 * UP)
-
-        # Start with a few arrows then fade them out into gradient
-        dirs = [(1, 0), (0.4, 1), (-1, 0.2), (0.2, -1)]
-        arrows = VGroup(*[
-            tangent_arrow(axes, u0, v0, z0, fu, fv, dx, dy, length=0.8, color=BLUE_B, thickness=0.02)
-            for (dx, dy) in dirs
-        ])
-
-        self.play(LaggedStart(*[Create(a) for a in arrows], lag_ratio=0.12), run_time=0.8)
-        self.play(FadeOut(arrows), Create(grad_arrow), FadeIn(grad_label), run_time=1.0)
-
-        # Camera: subtle push-in at the moment gradient appears
-        self.move_camera(phi=64 * DEGREES, theta=-12 * DEGREES, zoom=1.38, run_time=1.0)
-
-        # Rotating direction arrow + HUD
-        theta = ValueTracker(0.0)
-
-        def rotating_arrow():
-            ang = theta.get_value()
-            d = np.array([np.cos(ang), np.sin(ang)])
-            return tangent_arrow(axes, u0, v0, z0, fu, fv, d[0], d[1], length=0.95, color=BLUE_A, thickness=0.02)
-
-        rot_arr = always_redraw(rotating_arrow)
-
-        value = DecimalNumber(0.0, num_decimal_places=2).scale(0.55).set_color(WHITE)
-        value_label = MathTex(r"D_{\mathbf{v}}f \approx \nabla f \cdot \mathbf{v}").scale(0.55).set_color(GRAY_A)
-
-        hud = VGroup(value_label, value).arrange(DOWN, aligned_edge=LEFT, buff=0.15).to_corner(UL, buff=0.4)
-        self.add_fixed_in_frame_mobjects(hud)
-
-        def update_value(m):
-            ang = theta.get_value()
-            m.set_value(fu * np.cos(ang) + fv * np.sin(ang))
-            return m
-
-        value.add_updater(update_value)
-
-        self.play(FadeIn(hud), FadeIn(rot_arr), run_time=0.6)
-
-        # Rotation
-        self.play(theta.animate.set_value(TAU), run_time=3.6, rate_func=linear)
-
-        # Perpendicular ~ 0
-        g_ang = np.arctan2(g_dir[1], g_dir[0])
-        self.play(theta.animate.set_value(g_ang + PI / 2), run_time=1.0)
-        self.wait(0.35)
-
-        # Align with gradient = max
-        self.play(theta.animate.set_value(g_ang), run_time=1.0)
+        # 1. Draw the Graph
+        self.play(DrawBorderThenFill(axes), run_time=1.0)
+        self.play(Create(graph), Write(graph_label), run_time=1.5)
+        
+        # Pause to appreciate the curve
         self.wait(1.0)
+
+        # 2. Show Ascent (Up Slope)
+        self.play(GrowFromCenter(dot1), run_time=0.5)
+        self.play(Create(tangent1), run_time=0.8)
+        self.play(Write(label1), run_time=0.6)
+
+        # Distinct Pause ("Not just a single slope...")
+        self.wait(1.5)
+
+        # 3. Show Descent (Down Slope)
+        self.play(GrowFromCenter(dot2), run_time=0.5)
+        self.play(Create(tangent2), run_time=0.8)
+        self.play(Write(label2), run_time=0.6)
+
+        # Final Pause for voiceover wrap-up
+        self.wait(2.0)
+
+        # 4. Clean Fade Out
+        self.play(FadeOut(full_group), run_time=1.0)

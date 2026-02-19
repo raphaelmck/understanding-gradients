@@ -32,7 +32,7 @@ there's essentially no change at all
 
 > $\nabla f$ appears
 
-This single vector encodes all local slopes at once. For any direction you choose, the rate of change is determined by how much that direction overlaps with this vector. Ans when the two directions line up perfectly, the increase is as large as it can possibly be.
+This single vector encodes all local slopes at once. For any direction you choose, the rate of change is determined by how much that direction overlaps with this vector. And when the two directions line up perfectly, the increase is as large as it can possibly be.
 
 > transition into level curves
 
