@@ -493,7 +493,7 @@ class S02_5_DerivativeOverlay(Scene):
         self.play(FadeOut(full_group), run_time=1.0)
 
 class S02_7_ZoomToPoint(ThreeDScene):
-    """Smooth transition from Scene 2 end → zoomed tight on the point."""
+    """Fade Scene 2 helpers + smooth zoom to point, all in one scene."""
     def construct(self):
         axes, axes_labels, surface = build_world()
 
@@ -503,7 +503,6 @@ class S02_7_ZoomToPoint(ThreeDScene):
         p_ground  = axes.c2p(u0, v0, 0)
         p_surface = axes.c2p(u0, v0, z0)
 
-        # Recreate everything Scene 2 left on screen
         floor = Surface(
             lambda u, v: axes.c2p(u, v, -0.02),
             u_range=[-3, 3], v_range=[-3, 3], resolution=(2, 2),
@@ -516,7 +515,7 @@ class S02_7_ZoomToPoint(ThreeDScene):
         val_label   = DecimalNumber(z0, num_decimal_places=2).scale(0.5).set_color(WHITE)
         val_label.next_to(surf_dot, UR, buff=0.15)
 
-        # Match Scene 2's final camera exactly
+        # Start UNSHIFTED — exact match with S02 end frame
         self.set_camera_orientation(
             phi=55 * DEGREES,
             theta=-15 * DEGREES,
@@ -528,23 +527,34 @@ class S02_7_ZoomToPoint(ThreeDScene):
 
         self.wait(0.3)
 
-        # Step 1: Fade out helpers while beginning to zoom in (keep surface + dot)
+        # Fade out helpers + shrink dot + dim surface
         self.play(
             FadeOut(axes), FadeOut(axes_labels), FadeOut(floor),
             FadeOut(ground_dot), FadeOut(height_line), FadeOut(val_label),
             surface.animate.set_style(fill_opacity=0.85, stroke_width=0),
+            surf_dot.animate.scale(0.05 / 0.07),
             run_time=1.5,
             rate_func=smooth,
         )
 
-        # Step 2: Smooth camera move to the tight zoom
-        # We move_camera to the same state Scene 3 will start at,
-        # keeping focal_point on p_surface the whole time.
+        # Invisible shift: move world so point is at ORIGIN and swap focal_point.
+        # With helpers gone there are no reference lines, so the shift is imperceptible.
+        shift_vec = -p_surface
+        surface.shift(shift_vec)
+        surf_dot.shift(shift_vec)
+        self.set_camera_orientation(
+            phi=55 * DEGREES,
+            theta=-15 * DEGREES,
+            zoom=1.9,
+            focal_point=ORIGIN,
+        )
+
+        # Smooth zoom — works perfectly because focal_point is ORIGIN
         self.move_camera(
             phi=70 * DEGREES,
             theta=-10 * DEGREES,
             zoom=3.0,
-            focal_point=p_surface,
+            focal_point=ORIGIN,
             run_time=2.5,
             rate_func=smooth,
         )
@@ -554,23 +564,18 @@ class S02_7_ZoomToPoint(ThreeDScene):
 
 class S03_InfiniteSlopes(ThreeDScene):
     def construct(self):
-        # -----------------------------------------------------
-        # 1. Start exactly where S02_7_ZoomToPoint ends
-        # -----------------------------------------------------
         axes, axes_labels, surface = build_world()
 
         u0, v0 = 0.9, 1.2
         z0 = peaks_f(u0, v0)
         fu, fv = grad_numeric(peaks_f, u0, v0)
-        p_surface = axes.c2p(u0, v0, z0)
 
-        # Shift world so the point is at ORIGIN (dead-center guarantee)
-        world_offset = p_surface.copy()
+        # Shift world — matches S02_7 end
+        world_offset = axes.c2p(u0, v0, z0)
         VGroup(axes, surface).shift(-world_offset)
-
         p_focus = ORIGIN
 
-        # Camera matches the end of S02_7_ZoomToPoint
+        # Matches S02_7 end camera exactly
         self.set_camera_orientation(
             phi=70 * DEGREES,
             theta=-10 * DEGREES,
@@ -594,27 +599,58 @@ class S03_InfiniteSlopes(ThreeDScene):
         start_angle = g_ang + PI
         angles_to_show = [start_angle - i * (TAU / num_arrows) for i in range(num_arrows)]
 
-        ghost_arrows = VGroup()
+        z_bump = UP * 0.02          # lift arrows/trails above surface
+        trail_len = 0.25
+        arr_len = 0.25
 
-        for i, angle in enumerate(angles_to_show):
+        # Trail factory (shared by all arrows)
+        def make_trail_builder(dx_v, dy_v, head_tr, streak_len):
+            _bump = z_bump.copy()
+            def _build():
+                h = head_tr.get_value()
+                t = max(0.0, h - streak_len)
+                if h < 0.005:
+                    return VGroup()
+                opac = max(0.0, 1.0 - h / 1.5)
+                if opac < 0.01:
+                    return VGroup()
+                trail = ParametricFunction(
+                    lambda s, _dx=dx_v, _dy=dy_v: axes.c2p(
+                        u0 + s * _dx, v0 + s * _dy,
+                        peaks_f(u0 + s * _dx, v0 + s * _dy),
+                    ) + _bump,
+                    t_range=[t, h],
+                    color=WHITE,
+                    stroke_width=2.5,
+                    stroke_opacity=opac,
+                )
+                glow = trail.copy().set_stroke(
+                    width=5, color=WHITE, opacity=opac * 0.3
+                )
+                return VGroup(glow, trail)
+            return _build
+
+        # --- Pre-build all arrows, trackers, and trail snakes ---
+        arrows = []
+        trackers = []
+        snakes = []
+
+        for angle in angles_to_show:
             dx, dy = np.cos(angle), np.sin(angle)
-
             slope = fu * dx + fv * dy
             norm_slope = slope / max_slope
 
-            # Vivid, saturated colors
             if norm_slope > 0:
                 col = interpolate_color(YELLOW, RED, min(norm_slope * 1.2, 1.0))
             else:
                 col = interpolate_color(TEAL, BLUE, min(-norm_slope * 1.2, 1.0))
 
-            # --- Vector setup ---
-            d = np.array([dx, dy], dtype=float)
-            d /= np.linalg.norm(d)
-            arr_len = 0.25
-            du, dv = arr_len * d[0], arr_len * d[1]
-            start_pt = axes.c2p(u0, v0, z0)
-            end_pt = axes.c2p(u0 + du, v0 + dv, z0 + fu * du + fv * dv)
+            d_hat = np.array([dx, dy], dtype=float)
+            d_hat /= np.linalg.norm(d_hat)
+            du, dv = arr_len * d_hat[0], arr_len * d_hat[1]
+
+            start_pt = axes.c2p(u0, v0, z0) + z_bump
+            end_pt = axes.c2p(u0 + du, v0 + dv, z0 + fu * du + fv * dv) + z_bump
 
             arr = Arrow3D(
                 start=start_pt,
@@ -625,74 +661,33 @@ class S03_InfiniteSlopes(ThreeDScene):
                 color=col,
             )
 
-            # Floating Value Label
-            sign = "+" if slope > 0.05 else ("" if slope > -0.05 else "")
-            val_text = f"{sign}{slope:.2f}"
-            val_label = Text(val_text, font_size=16, color=col)
-            val_label.move_to(arr.get_end() + UP * 0.1)
-            val_label.rotate(PI / 2, RIGHT)
-            val_label.rotate(-10 * DEGREES, UP)
+            tracker = ValueTracker(0.001)
+            snake = always_redraw(make_trail_builder(dx, dy, tracker, trail_len))
 
-            # --- Particle trail ---
-            trail_head = ValueTracker(0.001)
-            trail_len = 0.25  # constant streak length
+            arrows.append(arr)
+            trackers.append(tracker)
+            snakes.append(snake)
 
-            def make_particle_trail(dx_v, dy_v, head_tr, streak_len):
-                def _build():
-                    h = head_tr.get_value()
-                    t = max(0.0, h - streak_len)
-                    if h < 0.005:
-                        return VGroup()
-                    opac = max(0.0, 1.0 - h / 1.5)
-                    if opac < 0.01:
-                        return VGroup()
-                    trail = ParametricFunction(
-                        lambda s: axes.c2p(
-                            u0 + s * dx_v,
-                            v0 + s * dy_v,
-                            peaks_f(u0 + s * dx_v, v0 + s * dy_v),
-                        ),
-                        t_range=[t, h],
-                        color=WHITE,
-                        stroke_width=2.5,
-                        stroke_opacity=opac,
-                    )
-                    glow = trail.copy().set_stroke(
-                        width=5, color=WHITE, opacity=opac * 0.3
-                    )
-                    return VGroup(glow, trail)
-                return _build
+        # Add all trail snakes up-front (invisible: tracker ≈ 0)
+        self.add(*snakes)
 
-            snake = always_redraw(make_particle_trail(dx, dy, trail_head, trail_len))
-            ghost_arrows.add(arr)
-
-            # Phase 1: Arrow appears with label
-            self.play(
-                GrowFromPoint(arr, p_focus),
-                FadeIn(val_label, shift=UP * 0.05),
-                run_time=0.5,
-                rate_func=smooth,
+        # Per-arrow sequence: fast grow + slow trail, then dim
+        sequences = []
+        for arr, tracker in zip(arrows, trackers):
+            sequences.append(
+                Succession(
+                    AnimationGroup(
+                        GrowFromPoint(arr, p_focus, run_time=0.25),
+                        tracker.animate(run_time=1.2, rate_func=linear).set_value(1.5),
+                    ),
+                    arr.animate(run_time=0.25).set_opacity(0.15),
+                )
             )
 
-            # Phase 2: Particle trail ripples out
-            self.add(snake)
-            self.play(
-                trail_head.animate.set_value(1.5),
-                run_time=1.3,
-                rate_func=linear,
-            )
-            self.remove(snake)
+        # Play all overlapping via LaggedStart
+        self.play(LaggedStart(*sequences, lag_ratio=0.35))
 
-            # Phase 3: Fade label, dim arrow to low opacity (keep its color)
-            self.play(
-                FadeOut(val_label, shift=UP * 0.05),
-                arr.animate.set_opacity(0.15),
-                run_time=0.25,
-                rate_func=smooth,
-            )
-
-            # Pause between arrows
-            if i < num_arrows - 1:
-                self.wait(0.1)
+        # Clean up trail redraws
+        self.remove(*snakes)
 
         self.wait(2.0)
