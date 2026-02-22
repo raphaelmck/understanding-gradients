@@ -492,30 +492,89 @@ class S02_5_DerivativeOverlay(Scene):
         # 4. Clean Fade Out
         self.play(FadeOut(full_group), run_time=1.0)
 
+class S02_7_ZoomToPoint(ThreeDScene):
+    """Smooth transition from Scene 2 end → zoomed tight on the point."""
+    def construct(self):
+        axes, axes_labels, surface = build_world()
+
+        u0, v0 = 0.9, 1.2
+        z0 = peaks_f(u0, v0)
+
+        p_ground  = axes.c2p(u0, v0, 0)
+        p_surface = axes.c2p(u0, v0, z0)
+
+        # Recreate everything Scene 2 left on screen
+        floor = Surface(
+            lambda u, v: axes.c2p(u, v, -0.02),
+            u_range=[-3, 3], v_range=[-3, 3], resolution=(2, 2),
+        )
+        floor.set_style(fill_opacity=0.20, fill_color=GRAY_D, stroke_width=0)
+
+        ground_dot  = Dot3D(p_ground, radius=0.06, color=WHITE)
+        surf_dot    = Dot3D(p_surface, radius=0.07, color=WHITE)
+        height_line = DashedLine(p_ground, p_surface, dash_length=0.08).set_color(GRAY_B)
+        val_label   = DecimalNumber(z0, num_decimal_places=2).scale(0.5).set_color(WHITE)
+        val_label.next_to(surf_dot, UR, buff=0.15)
+
+        # Match Scene 2's final camera exactly
+        self.set_camera_orientation(
+            phi=55 * DEGREES,
+            theta=-15 * DEGREES,
+            zoom=1.9,
+            focal_point=p_surface,
+        )
+        surface.set_style(fill_opacity=0.95, stroke_width=0)
+        self.add(surface, axes, axes_labels, floor, ground_dot, height_line, surf_dot, val_label)
+
+        self.wait(0.3)
+
+        # Step 1: Fade out helpers while beginning to zoom in (keep surface + dot)
+        self.play(
+            FadeOut(axes), FadeOut(axes_labels), FadeOut(floor),
+            FadeOut(ground_dot), FadeOut(height_line), FadeOut(val_label),
+            surface.animate.set_style(fill_opacity=0.85, stroke_width=0),
+            run_time=1.5,
+            rate_func=smooth,
+        )
+
+        # Step 2: Smooth camera move to the tight zoom
+        # We move_camera to the same state Scene 3 will start at,
+        # keeping focal_point on p_surface the whole time.
+        self.move_camera(
+            phi=70 * DEGREES,
+            theta=-10 * DEGREES,
+            zoom=3.0,
+            focal_point=p_surface,
+            run_time=2.5,
+            rate_func=smooth,
+        )
+
+        self.wait(0.5)
+
+
 class S03_InfiniteSlopes(ThreeDScene):
     def construct(self):
         # -----------------------------------------------------
-        # 1. Setup & Camera Sync
+        # 1. Start exactly where S02_7_ZoomToPoint ends
         # -----------------------------------------------------
         axes, axes_labels, surface = build_world()
 
         u0, v0 = 0.9, 1.2
         z0 = peaks_f(u0, v0)
         fu, fv = grad_numeric(peaks_f, u0, v0)
+        p_surface = axes.c2p(u0, v0, z0)
 
-        # Shift the ENTIRE world so the point of interest sits at the 3D origin.
-        # This guarantees the point is dead-center regardless of camera angles.
-        world_offset = axes.c2p(u0, v0, z0)
-        world = VGroup(axes, surface)
-        world.shift(-world_offset)
+        # Shift world so the point is at ORIGIN (dead-center guarantee)
+        world_offset = p_surface.copy()
+        VGroup(axes, surface).shift(-world_offset)
 
-        # p_focus is now at ORIGIN
         p_focus = ORIGIN
 
+        # Camera matches the end of S02_7_ZoomToPoint
         self.set_camera_orientation(
-            phi=55 * DEGREES,
-            theta=-15 * DEGREES,
-            zoom=1.9,
+            phi=70 * DEGREES,
+            theta=-10 * DEGREES,
+            zoom=3.0,
             focal_point=ORIGIN,
         )
 
@@ -523,18 +582,7 @@ class S03_InfiniteSlopes(ThreeDScene):
         dot = Dot3D(ORIGIN, radius=0.05, color=WHITE)
         self.add(surface, dot)
 
-        # -----------------------------------------------------
-        # 2. Smooth Centered Zoom
-        # -----------------------------------------------------
-        self.move_camera(
-            phi=70 * DEGREES,
-            theta=-10 * DEGREES,
-            zoom=3.0,
-            focal_point=ORIGIN,
-            run_time=2.5,
-            rate_func=smooth,
-        )
-        self.wait(0.5)
+        self.wait(0.3)
 
         # -----------------------------------------------------
         # 3. Infinite Slopes (Clockwise from Downhill)
