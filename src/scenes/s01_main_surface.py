@@ -491,3 +491,140 @@ class S02_5_DerivativeOverlay(Scene):
 
         # 4. Clean Fade Out
         self.play(FadeOut(full_group), run_time=1.0)
+
+class S03_InfiniteSlopes(ThreeDScene):
+    def construct(self):
+        # -----------------------------------------------------
+        # 1. Setup & Camera Sync
+        # -----------------------------------------------------
+        axes, axes_labels, surface = build_world()
+        
+        u0, v0 = 0.9, 1.2
+        z0 = peaks_f(u0, v0)
+        p_focus = axes.c2p(u0, v0, z0)
+        fu, fv = grad_numeric(peaks_f, u0, v0)
+
+        # FIX: Force the camera's actual target object to jump to our point
+        # This prevents the perspective "drift" to the top right.
+        self.camera.focal_point.move_to(p_focus)
+
+        self.set_camera_orientation(
+            phi=55 * DEGREES, 
+            theta=-15 * DEGREES, 
+            zoom=1.9
+        )
+
+        surface.set_style(fill_opacity=0.85, stroke_width=0)
+        dot = Dot3D(p_focus, radius=0.035, color=WHITE) # Smaller dot
+        self.add(surface, dot)
+
+        # -----------------------------------------------------
+        # 2. Perfect Centered Zoom
+        # -----------------------------------------------------
+        self.move_camera(
+            phi=65 * DEGREES, 
+            theta=-30 * DEGREES, 
+            zoom=3.8,            # Very tight zoom
+            focal_point=p_focus, # Lock center
+            run_time=2.0,
+            rate_func=smooth
+        )
+        self.wait(0.5)
+
+        # -----------------------------------------------------
+        # 3. Infinite Slopes (Clockwise from Downhill)
+        # -----------------------------------------------------
+        max_slope = np.linalg.norm([fu, fv])
+        g_ang = np.arctan2(fv, fu) 
+
+        # 12 arrows, starting Downhill (+PI), going clockwise (-)
+        num_arrows = 12
+        start_angle = g_ang + PI 
+        angles_to_show = [start_angle - i * (TAU / num_arrows) for i in range(num_arrows)]
+
+        ghost_arrows = VGroup()
+
+        for angle in angles_to_show:
+            dx, dy = np.cos(angle), np.sin(angle)
+            
+            slope = fu * dx + fv * dy
+            norm_slope = slope / max_slope
+            
+            if norm_slope > 0:
+                col = interpolate_color(GRAY, RED, norm_slope)
+            else:
+                col = interpolate_color(GRAY, BLUE, -norm_slope)
+            
+            # --- FIX: Custom Arrow3D for tiny tips ---
+            d = np.array([dx, dy], dtype=float)
+            d /= np.linalg.norm(d)
+            arr_len = 0.35 # Much shorter arrows
+            du, dv = arr_len * d[0], arr_len * d[1]
+            start_pt = axes.c2p(u0, v0, z0)
+            end_pt = axes.c2p(u0 + du, v0 + dv, z0 + fu * du + fv * dv)
+
+            arr = Arrow3D(
+                start=start_pt,
+                end=end_pt,
+                thickness=0.005,
+                height=0.06,       # Tiny arrowhead length
+                base_radius=0.018, # Tiny arrowhead width
+                color=col
+            )
+            
+            # Floating Value Label
+            sign = "+" if slope > 0.05 else ("" if slope > -0.05 else "")
+            val_text = f"{sign}{slope:.2f}"
+            val_label = Text(val_text, font_size=16, color=col)
+            val_label.move_to(arr.get_end() + UP * 0.1)
+            
+            val_label.rotate(PI/2, RIGHT)
+            val_label.rotate(-30 * DEGREES, UP) 
+
+            # --- Flowing Snake Effect ---
+            t_min = ValueTracker(0.0001)
+            t_max = ValueTracker(0.001)
+            
+            def get_snake_generator(dx_val, dy_val, tracker_min, tracker_max):
+                def _generate_snake():
+                    low = tracker_min.get_value()
+                    high = max(low + 0.001, tracker_max.get_value()) 
+                    return ParametricFunction(
+                        lambda t: axes.c2p(
+                            u0 + t*dx_val, 
+                            v0 + t*dy_val, 
+                            peaks_f(u0 + t*dx_val, v0 + t*dy_val)
+                        ),
+                        t_range=[low, high],
+                        color=WHITE,
+                        stroke_width=3 # Thinner snake
+                    )
+                return _generate_snake
+            
+            snake = always_redraw(get_snake_generator(dx, dy, t_min, t_max))
+
+            # --- Sequence Animations ---
+            self.add(snake)
+            
+            # Snake shoots out
+            self.play(
+                GrowFromPoint(arr, p_focus),
+                FadeIn(val_label, shift=UP*0.05),
+                t_max.animate.set_value(0.45), 
+                run_time=0.6,
+                rate_func=smooth
+            )
+            
+            # Tail catches up, arrow ghosts
+            self.play(
+                t_min.animate.set_value(0.45), 
+                FadeOut(val_label, shift=UP*0.05),
+                arr.animate.set_opacity(0.15), 
+                run_time=0.4,
+                rate_func=smooth
+            )
+            
+            self.remove(snake) 
+            ghost_arrows.add(arr)
+
+        self.wait(2.0)
