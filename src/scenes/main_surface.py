@@ -498,36 +498,41 @@ class S03_InfiniteSlopes(ThreeDScene):
         # 1. Setup & Camera Sync
         # -----------------------------------------------------
         axes, axes_labels, surface = build_world()
-        
+
         u0, v0 = 0.9, 1.2
         z0 = peaks_f(u0, v0)
-        p_focus = axes.c2p(u0, v0, z0)
         fu, fv = grad_numeric(peaks_f, u0, v0)
 
-        # FIX: Force the camera's actual target object to jump to our point
-        # This prevents the perspective "drift" to the top right.
-        self.camera.focal_point.move_to(p_focus)
+        # Shift the ENTIRE world so the point of interest sits at the 3D origin.
+        # This guarantees the point is dead-center regardless of camera angles.
+        world_offset = axes.c2p(u0, v0, z0)
+        world = VGroup(axes, surface)
+        world.shift(-world_offset)
+
+        # p_focus is now at ORIGIN
+        p_focus = ORIGIN
 
         self.set_camera_orientation(
-            phi=55 * DEGREES, 
-            theta=-15 * DEGREES, 
-            zoom=1.9
+            phi=55 * DEGREES,
+            theta=-15 * DEGREES,
+            zoom=1.9,
+            focal_point=ORIGIN,
         )
 
         surface.set_style(fill_opacity=0.85, stroke_width=0)
-        dot = Dot3D(p_focus, radius=0.035, color=WHITE) # Smaller dot
+        dot = Dot3D(ORIGIN, radius=0.05, color=WHITE)
         self.add(surface, dot)
 
         # -----------------------------------------------------
-        # 2. Perfect Centered Zoom
+        # 2. Smooth Centered Zoom
         # -----------------------------------------------------
         self.move_camera(
-            phi=65 * DEGREES, 
-            theta=-30 * DEGREES, 
-            zoom=3.8,            # Very tight zoom
-            focal_point=p_focus, # Lock center
-            run_time=2.0,
-            rate_func=smooth
+            phi=70 * DEGREES,
+            theta=-10 * DEGREES,
+            zoom=3.0,
+            focal_point=ORIGIN,
+            run_time=2.5,
+            rate_func=smooth,
         )
         self.wait(0.5)
 
@@ -535,30 +540,30 @@ class S03_InfiniteSlopes(ThreeDScene):
         # 3. Infinite Slopes (Clockwise from Downhill)
         # -----------------------------------------------------
         max_slope = np.linalg.norm([fu, fv])
-        g_ang = np.arctan2(fv, fu) 
+        g_ang = np.arctan2(fv, fu)
 
-        # 12 arrows, starting Downhill (+PI), going clockwise (-)
         num_arrows = 12
-        start_angle = g_ang + PI 
+        start_angle = g_ang + PI
         angles_to_show = [start_angle - i * (TAU / num_arrows) for i in range(num_arrows)]
 
         ghost_arrows = VGroup()
 
-        for angle in angles_to_show:
+        for i, angle in enumerate(angles_to_show):
             dx, dy = np.cos(angle), np.sin(angle)
-            
+
             slope = fu * dx + fv * dy
             norm_slope = slope / max_slope
-            
+
+            # Vivid, saturated colors
             if norm_slope > 0:
-                col = interpolate_color(GRAY, RED, norm_slope)
+                col = interpolate_color(YELLOW, RED, min(norm_slope * 1.2, 1.0))
             else:
-                col = interpolate_color(GRAY, BLUE, -norm_slope)
-            
-            # --- FIX: Custom Arrow3D for tiny tips ---
+                col = interpolate_color(TEAL, BLUE, min(-norm_slope * 1.2, 1.0))
+
+            # --- Vector setup ---
             d = np.array([dx, dy], dtype=float)
             d /= np.linalg.norm(d)
-            arr_len = 0.35 # Much shorter arrows
+            arr_len = 0.25
             du, dv = arr_len * d[0], arr_len * d[1]
             start_pt = axes.c2p(u0, v0, z0)
             end_pt = axes.c2p(u0 + du, v0 + dv, z0 + fu * du + fv * dv)
@@ -566,65 +571,80 @@ class S03_InfiniteSlopes(ThreeDScene):
             arr = Arrow3D(
                 start=start_pt,
                 end=end_pt,
-                thickness=0.005,
-                height=0.06,       # Tiny arrowhead length
-                base_radius=0.018, # Tiny arrowhead width
-                color=col
+                thickness=0.004,
+                height=0.07,
+                base_radius=0.02,
+                color=col,
             )
-            
+
             # Floating Value Label
             sign = "+" if slope > 0.05 else ("" if slope > -0.05 else "")
             val_text = f"{sign}{slope:.2f}"
             val_label = Text(val_text, font_size=16, color=col)
             val_label.move_to(arr.get_end() + UP * 0.1)
-            
-            val_label.rotate(PI/2, RIGHT)
-            val_label.rotate(-30 * DEGREES, UP) 
+            val_label.rotate(PI / 2, RIGHT)
+            val_label.rotate(-10 * DEGREES, UP)
 
-            # --- Flowing Snake Effect ---
-            t_min = ValueTracker(0.0001)
-            t_max = ValueTracker(0.001)
-            
-            def get_snake_generator(dx_val, dy_val, tracker_min, tracker_max):
-                def _generate_snake():
-                    low = tracker_min.get_value()
-                    high = max(low + 0.001, tracker_max.get_value()) 
-                    return ParametricFunction(
-                        lambda t: axes.c2p(
-                            u0 + t*dx_val, 
-                            v0 + t*dy_val, 
-                            peaks_f(u0 + t*dx_val, v0 + t*dy_val)
+            # --- Particle trail ---
+            trail_head = ValueTracker(0.001)
+            trail_len = 0.25  # constant streak length
+
+            def make_particle_trail(dx_v, dy_v, head_tr, streak_len):
+                def _build():
+                    h = head_tr.get_value()
+                    t = max(0.0, h - streak_len)
+                    if h < 0.005:
+                        return VGroup()
+                    opac = max(0.0, 1.0 - h / 1.5)
+                    if opac < 0.01:
+                        return VGroup()
+                    trail = ParametricFunction(
+                        lambda s: axes.c2p(
+                            u0 + s * dx_v,
+                            v0 + s * dy_v,
+                            peaks_f(u0 + s * dx_v, v0 + s * dy_v),
                         ),
-                        t_range=[low, high],
+                        t_range=[t, h],
                         color=WHITE,
-                        stroke_width=3 # Thinner snake
+                        stroke_width=2.5,
+                        stroke_opacity=opac,
                     )
-                return _generate_snake
-            
-            snake = always_redraw(get_snake_generator(dx, dy, t_min, t_max))
+                    glow = trail.copy().set_stroke(
+                        width=5, color=WHITE, opacity=opac * 0.3
+                    )
+                    return VGroup(glow, trail)
+                return _build
 
-            # --- Sequence Animations ---
-            self.add(snake)
-            
-            # Snake shoots out
+            snake = always_redraw(make_particle_trail(dx, dy, trail_head, trail_len))
+            ghost_arrows.add(arr)
+
+            # Phase 1: Arrow appears with label
             self.play(
                 GrowFromPoint(arr, p_focus),
-                FadeIn(val_label, shift=UP*0.05),
-                t_max.animate.set_value(0.45), 
-                run_time=0.6,
-                rate_func=smooth
+                FadeIn(val_label, shift=UP * 0.05),
+                run_time=0.5,
+                rate_func=smooth,
             )
-            
-            # Tail catches up, arrow ghosts
+
+            # Phase 2: Particle trail ripples out
+            self.add(snake)
             self.play(
-                t_min.animate.set_value(0.45), 
-                FadeOut(val_label, shift=UP*0.05),
-                arr.animate.set_opacity(0.15), 
-                run_time=0.4,
-                rate_func=smooth
+                trail_head.animate.set_value(1.5),
+                run_time=1.3,
+                rate_func=linear,
             )
-            
-            self.remove(snake) 
-            ghost_arrows.add(arr)
+            self.remove(snake)
+
+            # Phase 3: Fade label, dim arrow to low opacity (keep its color)
+            self.play(
+                FadeOut(val_label, shift=UP * 0.05),
+                arr.animate.set_opacity(0.15),
+                run_time=0.25,
+                rate_func=smooth,
+            )
+
+            # Pause between arrows
+            if i < num_arrows - 1:
+                self.wait(0.1)
 
         self.wait(2.0)
