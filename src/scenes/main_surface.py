@@ -1118,13 +1118,23 @@ class S05_5_Transition(ThreeDScene):
             run_time=1.0,
         )
 
-        # ── Phase 2: smooth zoom-out → bird's-eye ───────────
-        surface_center = axes.c2p(0, 0, 0)
+        # ── Phase 2: pan to centre by sliding the surface (camera fixed) ──
+        # Animating objects toward ORIGIN while camera looks at ORIGIN
+        # produces a smooth pan effect.
+        recentre = -np.array(axes.c2p(0, 0, 0))
+        self.play(
+            surface.animate.shift(recentre),
+            run_time=1.5,
+            rate_func=smooth,
+        )
+        axes.shift(recentre)   # keep in sync (not visible, just for c2p)
+
+        # ── Phase 3: smooth zoom-out → bird's-eye ───────────
         self.move_camera(
-            phi=5 * DEGREES,
+            phi=0 * DEGREES,
             theta=-90 * DEGREES,
-            zoom=0.75,
-            focal_point=surface_center,
+            zoom=0.85,
+            focal_point=ORIGIN,
             run_time=3.5,
             rate_func=smooth,
         )
@@ -1163,7 +1173,7 @@ class S05_5_Transition(ThreeDScene):
                 if len(seg) > 200:
                     idx = np.round(np.linspace(0, len(seg) - 1, 200)).astype(int)
                     seg = seg[idx]
-                pts = [axes.c2p(u, v, lev) for u, v in seg]
+                pts = [axes.c2p(u, v, 0) for u, v in seg]
                 curve = VMobject()
                 curve.set_points_smoothly(pts)
                 curve.set_stroke(col, width=2.0, opacity=0.9)
