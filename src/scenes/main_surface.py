@@ -1190,3 +1190,211 @@ class S05_5_Transition(ThreeDScene):
         )
 
         self.wait(1.5)
+
+
+class S06_GradientPerp(ThreeDScene):
+    """Level curves → ∇f perpendicular → zero dot product."""
+    def construct(self):
+        import matplotlib.pyplot as plt
+
+        axes, _, _ = build_world()
+        self.set_camera_orientation(
+            phi=0 * DEGREES,
+            theta=-90 * DEGREES,
+            zoom=0.85,
+            focal_point=ORIGIN,
+        )
+
+        # ── Level curves (matches S05_5_Transition end) ──────────
+        N = 300
+        Ug, Vg = np.meshgrid(np.linspace(-3, 3, N), np.linspace(-3, 3, N))
+        Zg = peaks_f(Ug, Vg)
+        levels = np.linspace(-5, 8, 14)
+
+        fig, ax_mpl = plt.subplots()
+        cs = ax_mpl.contour(Ug, Vg, Zg, levels=levels)
+
+        def _z_col(z):
+            if z <= 0:
+                return interpolate_color(BLUE_E, BLUE_C, (z + 8) / 8)
+            if z <= 4:
+                return interpolate_color(BLUE_C, GREEN_C, z / 4)
+            if z <= 8:
+                return interpolate_color(GREEN_C, YELLOW_E, (z - 4) / 4)
+            return YELLOW_E
+
+        contour_curves = VGroup()
+        for i, lev in enumerate(cs.levels):
+            col = _z_col(lev)
+            for seg in cs.allsegs[i]:
+                if len(seg) < 3:
+                    continue
+                if len(seg) > 200:
+                    idx = np.round(np.linspace(0, len(seg) - 1, 200)).astype(int)
+                    seg = seg[idx]
+                pts = [axes.c2p(u, v, 0) for u, v in seg]
+                curve = VMobject()
+                curve.set_points_smoothly(pts)
+                curve.set_stroke(col, width=2.0, opacity=0.9)
+                curve.set_z_index(1)
+                contour_curves.add(curve)
+        plt.close(fig)
+
+        self.add(contour_curves)
+        self.wait(0.5)
+
+        # ── Point: same as all previous scenes ────────────────────
+        u0, v0 = 0.9, 1.2
+        z0     = peaks_f(u0, v0)
+        fu, fv = grad_numeric(peaks_f, u0, v0)
+        gm       = np.linalg.norm([fu, fv])
+        grad_hat = np.array([fu, fv]) / gm
+        tang_hat = np.array([-fv, fu]) / gm   # 90° CCW from gradient
+        p0 = axes.c2p(u0, v0, 0)
+        arr_len = 0.7   # data units
+
+        # ── Phase 1: dim curves, highlight level curve through point ──
+        fig2, ax2 = plt.subplots()
+        cs2 = ax2.contour(Ug, Vg, Zg, levels=[z0])
+        h_curves = VGroup()
+        for seg in cs2.allsegs[0]:
+            if len(seg) < 3:
+                continue
+            if len(seg) > 200:
+                idx = np.round(np.linspace(0, len(seg) - 1, 200)).astype(int)
+                seg = seg[idx]
+            pts = [axes.c2p(u, v, 0) for u, v in seg]
+            c = VMobject()
+            c.set_points_smoothly(pts)
+            c.set_stroke(WHITE, width=4.0, opacity=1.0)
+            c.set_z_index(6)
+            h_curves.add(c)
+        plt.close(fig2)
+
+        dot = Dot3D(p0, radius=0.06, color=WHITE)
+        dot.set_z_index(10)
+
+        self.play(
+            contour_curves.animate.set_stroke(opacity=0.2),
+            FadeIn(h_curves),
+            run_time=1.0,
+        )
+        self.play(FadeIn(dot, scale=2.5), run_time=0.6)
+        self.wait(0.3)
+
+        # ── Phase 2: tangent arrow (along level curve = same height) ──
+        tang_end = axes.c2p(
+            u0 + arr_len * tang_hat[0],
+            v0 + arr_len * tang_hat[1],
+            0,
+        )
+        tang_arrow = Arrow(
+            p0, tang_end, buff=0, color=BLUE_C,
+            stroke_width=5, max_tip_length_to_length_ratio=0.2,
+        )
+        tang_arrow.set_z_index(8)
+        self.play(GrowArrow(tang_arrow), run_time=0.8)
+        self.wait(0.4)
+
+        # ── Phase 3: gradient arrow + right-angle marker ──────────
+        grad_end = axes.c2p(
+            u0 + arr_len * grad_hat[0],
+            v0 + arr_len * grad_hat[1],
+            0,
+        )
+        grad_arrow_obj = Arrow(
+            p0, grad_end, buff=0, color=RED,
+            stroke_width=5, max_tip_length_to_length_ratio=0.2,
+        )
+        grad_arrow_obj.set_z_index(8)
+
+        nabla_lbl = MathTex(r"\nabla f", color=RED, font_size=44)
+        nabla_lbl.to_edge(RIGHT, buff=0.6).shift(UP * 0.8)
+        self.add_fixed_in_frame_mobjects(nabla_lbl)
+
+        # right-angle box in scene space
+        sq = 0.12
+        rg  = axes.c2p(u0 + sq * grad_hat[0], v0 + sq * grad_hat[1], 0)
+        rt  = axes.c2p(u0 + sq * tang_hat[0], v0 + sq * tang_hat[1], 0)
+        rgt = axes.c2p(
+            u0 + sq * grad_hat[0] + sq * tang_hat[0],
+            v0 + sq * grad_hat[1] + sq * tang_hat[1],
+            0,
+        )
+        ra = VGroup(
+            Line(rg, rgt, color=WHITE, stroke_width=2),
+            Line(rt, rgt, color=WHITE, stroke_width=2),
+        ).set_z_index(9)
+
+        self.play(
+            GrowArrow(grad_arrow_obj),
+            FadeIn(nabla_lbl, shift=RIGHT * 0.1),
+            run_time=0.8,
+        )
+        self.play(Create(ra), run_time=0.5)
+        self.wait(0.8)
+
+        # ── Phase 4: "zero overlap" — dot product animation ───────
+        # Fade out blue tangent arrow; replace with yellow test direction
+        # that starts 25° from ∇f (large overlap) and rotates to 90° (zero).
+        self.play(FadeOut(tang_arrow), run_time=0.4)
+
+        angle_tr = ValueTracker(25 * DEGREES)
+
+        def build_test_arr():
+            θ = angle_tr.get_value()
+            d = np.cos(θ) * grad_hat + np.sin(θ) * tang_hat
+            end_uv = np.array([u0, v0]) + arr_len * d
+            a = Arrow(
+                p0, axes.c2p(end_uv[0], end_uv[1], 0),
+                buff=0, color=YELLOW,
+                stroke_width=5, max_tip_length_to_length_ratio=0.2,
+            )
+            a.set_z_index(9)
+            return a
+
+        def build_proj():
+            """Yellow bar along ∇f showing projection (overlap)."""
+            θ = angle_tr.get_value()
+            proj = arr_len * np.cos(θ)
+            bar = VMobject()
+            if proj > 0.01:
+                end_uv = np.array([u0, v0]) + proj * grad_hat
+                bar = Line(
+                    p0, axes.c2p(end_uv[0], end_uv[1], 0),
+                    color=YELLOW, stroke_width=10,
+                )
+                bar.set_z_index(7)
+            return bar
+
+        test_arr = always_redraw(build_test_arr)
+        proj_bar = always_redraw(build_proj)
+
+        overlap_lbl = Text("overlap", font_size=26, color=YELLOW)
+        overlap_lbl.move_to(LEFT * 2.0 + UP * 1.2)
+        self.add_fixed_in_frame_mobjects(overlap_lbl)
+
+        self.play(
+            FadeIn(test_arr),
+            FadeIn(proj_bar),
+            FadeIn(overlap_lbl),
+            run_time=0.8,
+        )
+        self.wait(0.5)
+
+        # Rotate direction to perpendicular → overlap bar shrinks to zero
+        self.play(
+            angle_tr.animate.set_value(PI / 2),
+            run_time=2.5,
+            rate_func=smooth,
+        )
+        self.wait(0.5)
+
+        # ∇f · d = 0 label
+        self.play(FadeOut(overlap_lbl), run_time=0.3)
+        formula = MathTex(r"\nabla f \cdot \mathbf{d} = 0", color=WHITE, font_size=48)
+        formula.to_edge(DOWN, buff=1.8)
+        self.add_fixed_in_frame_mobjects(formula)
+        self.play(FadeIn(formula, shift=UP * 0.15), run_time=1.0)
+
+        self.wait(2.0)
