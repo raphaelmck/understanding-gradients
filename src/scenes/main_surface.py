@@ -2086,20 +2086,24 @@ class S10_Gradient(ThreeDScene):
                          end=axes.c2p(x0 + vx_val*aD, y0 + vy_val*aD, z0),
                          color=BLUE_C, thickness=0.022)
 
-        # ── S08 compact box at UL ──────────────────────────────────
+        # ── S08 compact box at UL — exactly matches S09 end state ─
+        # Reproduce _compact from S09: dfdx/dfdy side by side, dir below, scale 0.65
         _dfdx_b = VGroup(
-            MathTex(r"\frac{\partial f}{\partial x}", color=RED_C, font_size=46),
-            Text(": move only in  x", color=WHITE, font_size=24),
-        ).arrange(RIGHT, buff=0.18)
+            MathTex(r"\frac{\partial f}{\partial x}", color=RED_C, font_size=48),
+            Text(": move only in  x", color=WHITE, font_size=26),
+        ).arrange(RIGHT, buff=0.20)
         _dfdy_b = VGroup(
-            MathTex(r"\frac{\partial f}{\partial y}", color=BLUE_C, font_size=46),
-            Text(": move only in  y", color=WHITE, font_size=24),
-        ).arrange(RIGHT, buff=0.18)
-        _dir_b  = Text("direction-specific measurements", font_size=26, color=YELLOW_C, weight=BOLD)
+            MathTex(r"\frac{\partial f}{\partial y}", color=BLUE_C, font_size=48),
+            Text(": move only in  y", color=WHITE, font_size=26),
+        ).arrange(RIGHT, buff=0.20)
+        _dir_b  = Text("direction-specific measurements", font_size=28,
+                       color=YELLOW_C, weight=BOLD)
         _row    = VGroup(_dfdx_b, _dfdy_b).arrange(RIGHT, buff=0.40)
         _cmpct  = VGroup(_row, _dir_b).arrange(DOWN, aligned_edge=LEFT, buff=0.22)
         _cmpct.scale(0.65).to_corner(UL, buff=0.22)
-        s08_box = SurroundingRectangle(_cmpct, color=GRAY_C, buff=0.14, corner_radius=0.05)
+        s08_box = SurroundingRectangle(_cmpct, color=GRAY_C, buff=0.12, corner_radius=0.05)
+
+        f_lbl = MathTex(r"f(x,y)", color=WHITE, font_size=42).to_corner(UR, buff=0.45)
 
         # ── S09 end state: v label + x/y components + formula ─────
         v_lbl = VGroup(
@@ -2129,7 +2133,7 @@ class S10_Gradient(ThreeDScene):
 
         self.add(axes, surf, dot, v_arr, vx_arr, vy_arr)
         self.add_fixed_in_frame_mobjects(s08_box, _dfdx_b, _dfdy_b, _dir_b,
-                                          v_lbl, x_comp, y_comp, formula)
+                                          f_lbl, v_lbl, x_comp, y_comp, formula)
         self.wait(0.5)
 
         # ── Step 1: build dot product line — copies fly into columns
