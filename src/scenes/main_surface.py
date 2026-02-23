@@ -853,3 +853,330 @@ class S04_GradientReveal(ThreeDScene):
         )
 
         self.wait(2.0)
+
+
+class S05_RotatingSlope(ThreeDScene):
+    """A direction arrow rotates; a camera-facing number shows the slope."""
+    def construct(self):
+        axes, axes_labels, surface = build_world()
+
+        u0, v0 = 0.9, 1.2
+        z0 = peaks_f(u0, v0)
+        fu, fv = grad_numeric(peaks_f, u0, v0)
+
+        # Shift world — same as S04
+        world_offset = axes.c2p(u0, v0, z0)
+        VGroup(axes, surface).shift(-world_offset)
+
+        # Camera: exact S04 end
+        self.set_camera_orientation(
+            phi=60 * DEGREES,
+            theta=-55 * DEGREES,
+            zoom=3.2,
+            focal_point=ORIGIN,
+        )
+
+        surface.set_style(fill_opacity=0.85, stroke_width=0)
+        surface.set_z_index(-1)
+        dot = Dot3D(ORIGIN, radius=0.05, color=WHITE)
+        dot.set_z_index(2)
+        self.add(surface, dot)
+
+        # --- Gradient arrow (matches S04 end) ---
+        z_bump_grad = OUT * 0.12
+        grad_dir = np.array([fu, fv], dtype=float)
+        grad_mag = np.linalg.norm(grad_dir)
+        grad_hat = grad_dir / grad_mag
+        g_ang = np.arctan2(fv, fu)
+        grad_len = 0.25
+        gdu, gdv = grad_len * grad_hat[0], grad_len * grad_hat[1]
+
+        grad_start = axes.c2p(u0, v0, z0) + z_bump_grad
+        grad_end = axes.c2p(
+            u0 + gdu, v0 + gdv,
+            z0 + fu * gdu + fv * gdv,
+        ) + z_bump_grad
+
+        grad_arrow = Arrow3D(
+            start=grad_start, end=grad_end,
+            thickness=0.012, height=0.10, base_radius=0.035,
+            color=RED,
+        )
+        grad_glow = grad_arrow.copy().set_color(RED_A).set_opacity(0.35)
+        grad_arrow.set_z_index(1)
+        grad_glow.set_z_index(1)
+        self.add(grad_arrow, grad_glow)
+
+        # Fade out the dot
+        self.play(FadeOut(dot), run_time=0.5)
+
+        # --- Rotating direction arrow + slope number ---
+        arr_len = 0.25
+        # Start further left (CCW) of gradient direction
+        start_ang = g_ang + 1.0          # ~57° left of gradient
+        angle_tr = ValueTracker(start_ang)
+
+        # Camera orientation for billboard labels
+        cam_phi = 60 * DEGREES
+        cam_theta = -55 * DEGREES
+
+        def slope_color(norm_slope):
+            """RED (positive) → YELLOW (zero) → BLUE (negative)."""
+            if norm_slope > 0:
+                return interpolate_color(YELLOW, RED, min(norm_slope * 1.2, 1.0))
+            else:
+                return interpolate_color(YELLOW, BLUE, min(-norm_slope * 1.2, 1.0))
+
+        def build_dir_arrow():
+            a = angle_tr.get_value()
+            dx, dy = np.cos(a), np.sin(a)
+            d_hat = np.array([dx, dy], dtype=float)
+            d_hat /= np.linalg.norm(d_hat)
+            du, dv = arr_len * d_hat[0], arr_len * d_hat[1]
+            s = axes.c2p(u0, v0, z0) + z_bump_grad
+            e = axes.c2p(u0 + du, v0 + dv, z0 + fu * du + fv * dv) + z_bump_grad
+
+            slope = fu * dx + fv * dy
+            col = slope_color(slope / grad_mag)
+
+            arr = Arrow3D(
+                start=s, end=e,
+                thickness=0.010, height=0.09, base_radius=0.03,
+                color=col,
+            )
+            arr.set_z_index(3)
+            return arr
+
+        def build_slope_label():
+            a = angle_tr.get_value()
+            dx, dy = np.cos(a), np.sin(a)
+            slope = fu * dx + fv * dy
+
+            sign = "+" if slope >= 0 else ""
+            txt = f"{sign}{slope:.2f}"
+            label = Text(txt, font_size=12, color=WHITE)
+
+            # Position beyond arrow tip along arrow direction
+            d_hat = np.array([dx, dy], dtype=float)
+            d_hat /= np.linalg.norm(d_hat)
+            overshoot = arr_len + 0.08
+            du, dv = overshoot * d_hat[0], overshoot * d_hat[1]
+            beyond = axes.c2p(u0 + du, v0 + dv, z0 + fu * du + fv * dv) + z_bump_grad
+
+            label.move_to(beyond)
+            label.rotate(cam_phi, RIGHT)
+            label.rotate(cam_theta + PI / 2, OUT)
+            label.set_z_index(4)
+            return label
+
+        dir_arrow = always_redraw(build_dir_arrow)
+        slope_label = always_redraw(build_slope_label)
+
+        p_focus = axes.c2p(u0, v0, z0) + z_bump_grad
+        self.play(
+            GrowFromPoint(dir_arrow, p_focus),
+            FadeIn(slope_label),
+            run_time=0.6,
+        )
+
+        # --- Phase 1: Align with gradient, then rotate to opposite ---
+        self.play(
+            angle_tr.animate.set_value(g_ang),
+            run_time=2.0,
+            rate_func=smooth,
+        )
+        self.wait(1.0)
+
+        # Rotate: gradient → opposite (slope drops through 0 to most negative)
+        self.play(
+            angle_tr.animate.set_value(g_ang + PI),
+            run_time=6.0,
+            rate_func=smooth,
+        )
+
+        # "when you move against it, the height drops quickly"
+        self.wait(1.0)
+
+        # --- Phase 2: Continue to perpendicular (slope ≈ 0) ---
+        perp_ang = g_ang + PI / 2
+        self.play(
+            angle_tr.animate.set_value(perp_ang),
+            run_time=4.0,
+            rate_func=smooth,
+        )
+
+        # "there's essentially no change at all"
+        self.wait(1.2)
+
+        # --- Phase 3: Fade out label only, keep direction arrow, show ∇f ---
+        self.play(
+            FadeOut(slope_label),
+            run_time=0.8,
+            rate_func=smooth,
+        )
+
+        # ∇f label — right side of screen, shifted left a bit
+        nabla_label = MathTex(r"\nabla f", font_size=56, color=RED)
+        nabla_label.to_edge(RIGHT, buff=1.0).shift(UP * 0.3)
+        nabla_label.set_z_index(10)
+        self.add_fixed_in_frame_mobjects(nabla_label)
+
+        self.play(FadeIn(nabla_label, shift=RIGHT * 0.2), run_time=1.0)
+
+        self.wait(2.0)
+
+
+class S05_5_Transition(ThreeDScene):
+    """Transition: strip overlays → bird's-eye → contour-line cross-fade."""
+    def construct(self):
+        import matplotlib.pyplot as plt
+
+        axes, axes_labels, surface = build_world()
+
+        u0, v0 = 0.9, 1.2
+        z0 = peaks_f(u0, v0)
+        fu, fv = grad_numeric(peaks_f, u0, v0)
+
+        # Shift world (matches S04 / S05)
+        world_offset = axes.c2p(u0, v0, z0)
+        VGroup(axes, surface).shift(-world_offset)
+
+        # Camera — matches S05 end
+        self.set_camera_orientation(
+            phi=60 * DEGREES,
+            theta=-55 * DEGREES,
+            zoom=3.2,
+            focal_point=ORIGIN,
+        )
+
+        surface.set_style(fill_opacity=0.85, stroke_width=0)
+        surface.set_z_index(-1)
+        self.add(surface)
+
+        # ── Recreate S05 end objects ──────────────────────────
+        z_bump_grad = OUT * 0.12
+        grad_dir = np.array([fu, fv], dtype=float)
+        grad_mag = np.linalg.norm(grad_dir)
+        grad_hat = grad_dir / grad_mag
+        g_ang = np.arctan2(fv, fu)
+        grad_len = 0.25
+        gdu, gdv = grad_len * grad_hat[0], grad_len * grad_hat[1]
+
+        grad_start = axes.c2p(u0, v0, z0) + z_bump_grad
+        grad_end = axes.c2p(
+            u0 + gdu, v0 + gdv,
+            z0 + fu * gdu + fv * gdv,
+        ) + z_bump_grad
+
+        grad_arrow = Arrow3D(
+            start=grad_start, end=grad_end,
+            thickness=0.012, height=0.10, base_radius=0.035,
+            color=RED,
+        )
+        grad_glow = grad_arrow.copy().set_color(RED_A).set_opacity(0.35)
+        grad_arrow.set_z_index(1)
+        grad_glow.set_z_index(1)
+        self.add(grad_arrow, grad_glow)
+
+        # Direction arrow at perpendicular (S05 end state)
+        arr_len = 0.25
+        perp_ang = g_ang + PI / 2
+        dx, dy = np.cos(perp_ang), np.sin(perp_ang)
+        s_pt = axes.c2p(u0, v0, z0) + z_bump_grad
+        e_pt = axes.c2p(
+            u0 + arr_len * dx, v0 + arr_len * dy,
+            z0 + fu * arr_len * dx + fv * arr_len * dy,
+        ) + z_bump_grad
+
+        slope_val = fu * dx + fv * dy
+
+        def _slope_col(ns):
+            return (interpolate_color(YELLOW, RED, min(ns * 1.2, 1.0)) if ns > 0
+                    else interpolate_color(YELLOW, BLUE, min(-ns * 1.2, 1.0)))
+
+        dir_arrow = Arrow3D(
+            start=s_pt, end=e_pt,
+            thickness=0.010, height=0.09, base_radius=0.03,
+            color=_slope_col(slope_val / grad_mag),
+        )
+        dir_arrow.set_z_index(3)
+        self.add(dir_arrow)
+
+        # ∇f label (fixed in frame)
+        nabla_label = MathTex(r"\nabla f", font_size=56, color=RED)
+        nabla_label.to_edge(RIGHT, buff=1.0).shift(UP * 0.3)
+        nabla_label.set_z_index(10)
+        self.add_fixed_in_frame_mobjects(nabla_label)
+        self.add(nabla_label)
+
+        self.wait(0.3)
+
+        # ── Phase 1: strip all overlays ──────────────────────
+        self.play(
+            FadeOut(grad_arrow), FadeOut(grad_glow),
+            FadeOut(dir_arrow), FadeOut(nabla_label),
+            run_time=1.0,
+        )
+
+        # ── Phase 2: smooth zoom-out → bird's-eye ───────────
+        surface_center = axes.c2p(0, 0, 0)
+        self.move_camera(
+            phi=5 * DEGREES,
+            theta=-90 * DEGREES,
+            zoom=0.75,
+            focal_point=surface_center,
+            run_time=3.5,
+            rate_func=smooth,
+        )
+        self.wait(0.5)
+
+        # ── Phase 3: generate contour curves & cross-fade ───
+        N = 300
+        us = np.linspace(-3, 3, N)
+        vs = np.linspace(-3, 3, N)
+        U, V = np.meshgrid(us, vs)
+        Z_grid = peaks_f(U, V)
+
+        levels = np.linspace(-5, 8, 14)
+        fig, ax = plt.subplots()
+        cs = ax.contour(U, V, Z_grid, levels=levels)
+
+        def _z_col(z):
+            """Match surface fill_by_value palette."""
+            if z <= -8:
+                return BLUE_E
+            if z <= 0:
+                return interpolate_color(BLUE_E, BLUE_C, (z + 8) / 8)
+            if z <= 4:
+                return interpolate_color(BLUE_C, GREEN_C, z / 4)
+            if z <= 8:
+                return interpolate_color(GREEN_C, YELLOW_E, (z - 4) / 4)
+            return YELLOW_E
+
+        contour_curves = VGroup()
+        for i, lev in enumerate(cs.levels):
+            segs = cs.allsegs[i]
+            col = _z_col(lev)
+            for seg in segs:
+                if len(seg) < 3:
+                    continue
+                if len(seg) > 200:
+                    idx = np.round(np.linspace(0, len(seg) - 1, 200)).astype(int)
+                    seg = seg[idx]
+                pts = [axes.c2p(u, v, lev) for u, v in seg]
+                curve = VMobject()
+                curve.set_points_smoothly(pts)
+                curve.set_stroke(col, width=2.0, opacity=0.9)
+                curve.set_z_index(5)
+                contour_curves.add(curve)
+
+        plt.close(fig)
+
+        # Cross-fade: surface out, contour lines in
+        self.play(
+            FadeOut(surface),
+            FadeIn(contour_curves),
+            run_time=2.5,
+        )
+
+        self.wait(1.5)
