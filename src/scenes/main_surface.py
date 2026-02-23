@@ -599,7 +599,7 @@ class S03_InfiniteSlopes(ThreeDScene):
         start_angle = g_ang + PI
         angles_to_show = [start_angle - i * (TAU / num_arrows) for i in range(num_arrows)]
 
-        z_bump = UP * 0.02          # lift arrows/trails above surface
+        z_bump = OUT * 0.04         # lift arrows/trails above surface (OUT = z-axis)
         trail_len = 0.25
         arr_len = 0.25
 
@@ -689,5 +689,175 @@ class S03_InfiniteSlopes(ThreeDScene):
 
         # Clean up trail redraws
         self.remove(*snakes)
+
+        self.wait(2.0)
+
+
+class S04_GradientReveal(ThreeDScene):
+    """All directional arrows rotate/move into the single gradient vector."""
+    def construct(self):
+        axes, axes_labels, surface = build_world()
+
+        u0, v0 = 0.9, 1.2
+        z0 = peaks_f(u0, v0)
+        fu, fv = grad_numeric(peaks_f, u0, v0)
+
+        # Shift world — same as S03
+        world_offset = axes.c2p(u0, v0, z0)
+        VGroup(axes, surface).shift(-world_offset)
+
+        # Camera: exact S03 end
+        self.set_camera_orientation(
+            phi=70 * DEGREES,
+            theta=-10 * DEGREES,
+            zoom=3.0,
+            focal_point=ORIGIN,
+        )
+
+        surface.set_style(fill_opacity=0.85, stroke_width=0)
+        dot = Dot3D(ORIGIN, radius=0.05, color=WHITE)
+        self.add(surface, dot)
+
+        # --- Recreate the 12 dimmed arrows (S03 end state) ---
+        max_slope = np.linalg.norm([fu, fv])
+        g_ang = np.arctan2(fv, fu)
+        num_arrows = 12
+        start_angle = g_ang + PI
+        angles_to_show = [start_angle - i * (TAU / num_arrows) for i in range(num_arrows)]
+
+        z_bump = OUT * 0.04             # lift above surface (OUT = z-axis)
+        arr_len = 0.25
+
+        # Extra lift for the gradient arrow tip to clear the surface
+        z_bump_grad = OUT * 0.12
+
+        dim_arrows = VGroup()
+        for angle in angles_to_show:
+            dx, dy = np.cos(angle), np.sin(angle)
+            slope = fu * dx + fv * dy
+            norm_slope = slope / max_slope
+
+            if norm_slope > 0:
+                col = interpolate_color(YELLOW, RED, min(norm_slope * 1.2, 1.0))
+            else:
+                col = interpolate_color(TEAL, BLUE, min(-norm_slope * 1.2, 1.0))
+
+            d_hat = np.array([dx, dy], dtype=float)
+            d_hat /= np.linalg.norm(d_hat)
+            du, dv = arr_len * d_hat[0], arr_len * d_hat[1]
+
+            start_pt = axes.c2p(u0, v0, z0) + z_bump
+            end_pt = axes.c2p(u0 + du, v0 + dv, z0 + fu * du + fv * dv) + z_bump
+
+            arr = Arrow3D(
+                start=start_pt,
+                end=end_pt,
+                thickness=0.004,
+                height=0.07,
+                base_radius=0.02,
+                color=col,
+            ).set_opacity(0.15)
+            dim_arrows.add(arr)
+
+        self.add(dim_arrows)
+        self.wait(0.3)
+
+        # --- Build the gradient arrow (target for merge) ---
+        grad_dir = np.array([fu, fv], dtype=float)
+        grad_mag = np.linalg.norm(grad_dir)
+        grad_hat = grad_dir / grad_mag
+        grad_len = 0.25                    # same length as directional arrows
+        gdu, gdv = grad_len * grad_hat[0], grad_len * grad_hat[1]
+
+        grad_start = axes.c2p(u0, v0, z0) + z_bump_grad
+        grad_end = axes.c2p(
+            u0 + gdu, v0 + gdv,
+            z0 + fu * gdu + fv * gdv,
+        ) + z_bump_grad
+
+        # Build a "target" copy of the gradient arrow for each dim arrow
+        # so they all move/rotate to the same place
+        target_arrows = VGroup()
+        for _ in range(num_arrows):
+            t_arr = Arrow3D(
+                start=grad_start,
+                end=grad_end,
+                thickness=0.004,
+                height=0.07,
+                base_radius=0.02,
+                color=RED,
+            ).set_opacity(0.6)
+            target_arrows.add(t_arr)
+
+        # --- Step 1: Swing camera for a nicer gradient view ---
+        self.play(
+            dim_arrows.animate.set_opacity(0.5),
+            run_time=0.4,
+            rate_func=smooth,
+        )
+
+        self.move_camera(
+            phi=60 * DEGREES,
+            theta=-35 * DEGREES,
+            zoom=3.2,
+            focal_point=ORIGIN,
+            run_time=2.0,
+            rate_func=smooth,
+        )
+
+        # --- Step 2: All arrows rotate/move into the gradient direction ---
+        move_anims = []
+        for dim_arr, tgt_arr in zip(dim_arrows, target_arrows):
+            move_anims.append(Transform(dim_arr, tgt_arr))
+
+        self.play(
+            LaggedStart(*move_anims, lag_ratio=0.06),
+            run_time=3.0,
+            rate_func=smooth,
+        )
+
+        # --- Step 3: Collapse into the final bold gradient arrow ---
+        grad_arrow = Arrow3D(
+            start=grad_start,
+            end=grad_end,
+            thickness=0.012,
+            height=0.10,
+            base_radius=0.035,
+            color=RED,
+        )
+        # Add a glow duplicate for extra visibility
+        grad_glow = grad_arrow.copy().set_color(RED_A).set_opacity(0.35)
+
+        self.play(
+            FadeOut(dim_arrows),
+            FadeIn(grad_arrow),
+            FadeIn(grad_glow),
+            run_time=1.2,
+            rate_func=smooth,
+        )
+
+        # Glow ring pulse
+        glow_ring = Circle(radius=0.08, color=RED, stroke_width=3).move_to(ORIGIN)
+        glow_ring.rotate(PI / 2, RIGHT)
+        glow_ring.set_fill(RED, opacity=0.0)
+
+        self.play(
+            GrowFromCenter(glow_ring),
+            run_time=0.3,
+        )
+        self.play(
+            glow_ring.animate.scale(3.0).set_stroke(opacity=0.0),
+            run_time=0.7,
+            rate_func=smooth,
+        )
+        self.remove(glow_ring)
+
+        # --- Step 4: Slow rotate around the gradient to show it off ---
+        self.move_camera(
+            theta=-55 * DEGREES,
+            focal_point=ORIGIN,
+            run_time=2.5,
+            rate_func=smooth,
+        )
 
         self.wait(2.0)
