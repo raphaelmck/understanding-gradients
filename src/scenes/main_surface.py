@@ -760,6 +760,9 @@ class S04_GradientReveal(ThreeDScene):
             dim_arrows.add(arr)
 
         self.add(dim_arrows)
+        dim_arrows.set_z_index(1)
+        dot.set_z_index(2)
+        surface.set_z_index(-1)
         self.wait(0.3)
 
         # --- Build the gradient arrow (target for merge) ---
@@ -828,6 +831,11 @@ class S04_GradientReveal(ThreeDScene):
         # Add a glow duplicate for extra visibility
         grad_glow = grad_arrow.copy().set_color(RED_A).set_opacity(0.35)
 
+        # Keep arrows rendered on top of surface
+        surface.set_z_index(-1)
+        grad_arrow.set_z_index(1)
+        grad_glow.set_z_index(1)
+
         self.play(
             FadeOut(dim_arrows),
             FadeIn(grad_arrow),
@@ -835,22 +843,6 @@ class S04_GradientReveal(ThreeDScene):
             run_time=1.2,
             rate_func=smooth,
         )
-
-        # Glow ring pulse
-        glow_ring = Circle(radius=0.08, color=RED, stroke_width=3).move_to(ORIGIN)
-        glow_ring.rotate(PI / 2, RIGHT)
-        glow_ring.set_fill(RED, opacity=0.0)
-
-        self.play(
-            GrowFromCenter(glow_ring),
-            run_time=0.3,
-        )
-        self.play(
-            glow_ring.animate.scale(3.0).set_stroke(opacity=0.0),
-            run_time=0.7,
-            rate_func=smooth,
-        )
-        self.remove(glow_ring)
 
         # --- Step 4: Slow rotate around the gradient to show it off ---
         self.move_camera(
