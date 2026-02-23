@@ -2038,3 +2038,194 @@ class S09_DirectionalDerivative(ThreeDScene):
         self.add_fixed_in_frame_mobjects(formula)
         self.play(Write(formula), run_time=1.2)
         self.wait(1.5)
+
+
+class S10_Gradient(ThreeDScene):
+    """Rewrite as dot product → gradient vector."""
+
+    def construct(self):
+        self.set_camera_orientation(phi=60 * DEGREES, theta=40 * DEGREES, zoom=0.80)
+
+        # ── Scene geometry ─────────────────────────────────────────
+        axes = ThreeDAxes(
+            x_range=[-2.5, 2.5, 1], y_range=[-2.5, 2.5, 1], z_range=[-0.5, 4.0, 1],
+            x_length=6, y_length=6, z_length=5,
+            axis_config={"color": GRAY_C, "include_tip": True,
+                         "tip_length": 0.15, "stroke_width": 2},
+        )
+        _ct = 40 * DEGREES
+        axes.shift(
+            np.array([-np.sin(_ct), np.cos(_ct), 0]) * 3.5
+            + np.array([0, 0, -1]) * 1.2
+        )
+
+        def sf(u, v):
+            return 2.2 * np.exp(-0.45 * (u ** 2 + v ** 2)) + 0.3 * u - 0.1 * v + 0.4
+
+        surf = Surface(
+            lambda u, v: axes.c2p(u, v, sf(u, v)),
+            u_range=[-2.4, 2.4], v_range=[-2.4, 2.4], resolution=(28, 28),
+        )
+        surf.set_style(fill_opacity=0.55, stroke_width=0.5, stroke_opacity=0.2)
+        surf.set_color_by_gradient(BLUE_E, TEAL_C, GREEN_C, YELLOW_C, ORANGE)
+
+        x0, y0 = 0.6, 0.4
+        z0 = sf(x0, y0)
+        dot = Dot3D(axes.c2p(x0, y0, z0), radius=0.07, color=WHITE).set_z_index(10)
+
+        ang = 35 * DEGREES
+        vx_val, vy_val = np.cos(ang), np.sin(ang)
+        aD = 1.1
+        v_arr  = Arrow3D(start=axes.c2p(x0, y0, z0),
+                         end=axes.c2p(x0 + vx_val*aD, y0 + vy_val*aD, z0),
+                         color=GOLD, thickness=0.028)
+        vx_arr = Arrow3D(start=axes.c2p(x0, y0, z0),
+                         end=axes.c2p(x0 + vx_val*aD, y0, z0),
+                         color=RED_C, thickness=0.022)
+        vy_arr = Arrow3D(start=axes.c2p(x0 + vx_val*aD, y0, z0),
+                         end=axes.c2p(x0 + vx_val*aD, y0 + vy_val*aD, z0),
+                         color=BLUE_C, thickness=0.022)
+
+        # ── S08 compact box at UL ──────────────────────────────────
+        _dfdx_b = VGroup(
+            MathTex(r"\frac{\partial f}{\partial x}", color=RED_C, font_size=46),
+            Text(": move only in  x", color=WHITE, font_size=24),
+        ).arrange(RIGHT, buff=0.18)
+        _dfdy_b = VGroup(
+            MathTex(r"\frac{\partial f}{\partial y}", color=BLUE_C, font_size=46),
+            Text(": move only in  y", color=WHITE, font_size=24),
+        ).arrange(RIGHT, buff=0.18)
+        _dir_b  = Text("direction-specific measurements", font_size=26, color=YELLOW_C, weight=BOLD)
+        _row    = VGroup(_dfdx_b, _dfdy_b).arrange(RIGHT, buff=0.40)
+        _cmpct  = VGroup(_row, _dir_b).arrange(DOWN, aligned_edge=LEFT, buff=0.22)
+        _cmpct.scale(0.65).to_corner(UL, buff=0.22)
+        s08_box = SurroundingRectangle(_cmpct, color=GRAY_C, buff=0.14, corner_radius=0.05)
+
+        # ── S09 end state: v label + x/y components + formula ─────
+        v_lbl = VGroup(
+            MathTex(r"\mathbf{v} = (v_x,\, v_y)", color=GOLD, font_size=38),
+            Text("unit vector", color=WHITE, font_size=24),
+        ).arrange(RIGHT, buff=0.18).to_edge(LEFT, buff=0.40).set_y(1.8)
+
+        x_comp = VGroup(
+            MathTex(r"v_x", color=RED_C, font_size=34),
+            Text(": move in x-direction", color=WHITE, font_size=22),
+        ).arrange(RIGHT, buff=0.15).next_to(v_lbl, DOWN, buff=0.28, aligned_edge=LEFT)
+
+        y_comp = VGroup(
+            MathTex(r"v_y", color=BLUE_C, font_size=34),
+            Text(": move in y-direction", color=WHITE, font_size=22),
+        ).arrange(RIGHT, buff=0.15).next_to(x_comp, DOWN, buff=0.20, aligned_edge=LEFT)
+
+        formula = VGroup(
+            MathTex(r"\Delta f \approx \;", color=WHITE,  font_size=36),
+            MathTex(r"v_x",                 color=RED_C,  font_size=36),
+            MathTex(r"\frac{\partial f}{\partial x}", color=RED_C,  font_size=36),
+            MathTex(r"+",                   color=WHITE,  font_size=36),
+            MathTex(r"v_y",                 color=BLUE_C, font_size=36),
+            MathTex(r"\frac{\partial f}{\partial y}", color=BLUE_C, font_size=36),
+        ).arrange(RIGHT, buff=0.08)
+        formula.next_to(y_comp, DOWN, buff=0.38, aligned_edge=LEFT)
+
+        self.add(axes, surf, dot, v_arr, vx_arr, vy_arr)
+        self.add_fixed_in_frame_mobjects(s08_box, _dfdx_b, _dfdy_b, _dir_b,
+                                          v_lbl, x_comp, y_comp, formula)
+        self.wait(0.5)
+
+        # ── Step 1: build dot product line — copies fly into columns
+        dot_prod = MathTex(
+            r"\Delta f \approx \;",
+            r"\begin{pmatrix} \frac{\partial f}{\partial x} \\[4pt] \frac{\partial f}{\partial y} \end{pmatrix}",
+            r"\cdot",
+            r"\begin{pmatrix} v_x \\[4pt] v_y \end{pmatrix}",
+            font_size=38,
+        )
+        dot_prod[0].set_color(WHITE)
+        dot_prod[1].set_color(TEAL_C)
+        dot_prod[2].set_color(WHITE)
+        dot_prod[3].set_color(GOLD)
+        dot_prod.arrange(RIGHT, buff=0.22)
+        dot_prod.next_to(formula, DOWN, buff=0.42, aligned_edge=LEFT)
+        # Hide both column vectors initially
+        dot_prod[1].set_opacity(0)
+        dot_prod[3].set_opacity(0)
+
+        self.add_fixed_in_frame_mobjects(dot_prod)
+        self.play(FadeIn(dot_prod[0], dot_prod[2]), run_time=0.6)
+
+        # Partial copies fly into teal column, v copies fly into gold column
+        copy_dfdx = formula[2].copy()
+        copy_dfdy = formula[5].copy()
+        copy_vx   = formula[1].copy()
+        copy_vy   = formula[4].copy()
+        self.add_fixed_in_frame_mobjects(copy_dfdx, copy_dfdy, copy_vx, copy_vy)
+
+        teal_top = dot_prod[1].get_center() + UP  * 0.30
+        teal_bot = dot_prod[1].get_center() + DOWN * 0.30
+        gold_top = dot_prod[3].get_center() + UP  * 0.25
+        gold_bot = dot_prod[3].get_center() + DOWN * 0.25
+
+        self.play(
+            copy_dfdx.animate.move_to(teal_top),
+            copy_dfdy.animate.move_to(teal_bot),
+            copy_vx.animate.move_to(gold_top),
+            copy_vy.animate.move_to(gold_bot),
+            run_time=0.9, rate_func=smooth,
+        )
+        self.play(
+            FadeOut(copy_dfdx, copy_dfdy, copy_vx, copy_vy),
+            dot_prod[1].animate.set_opacity(1),
+            dot_prod[3].animate.set_opacity(1),
+            run_time=0.4,
+        )
+        self.wait(0.6)
+
+        # ── Step 2: shrink v_lbl + x/y_comp + formula into box ────
+        _v_t  = v_lbl.copy()
+        _xc_t = x_comp.copy()
+        _yc_t = y_comp.copy()
+        _f_t  = formula.copy()
+        _s09_cmpct = VGroup(_v_t, _xc_t, _yc_t, _f_t).arrange(DOWN, aligned_edge=LEFT, buff=0.18)
+        _s09_cmpct.scale(0.65).next_to(_cmpct, DOWN, buff=0.55, aligned_edge=LEFT)
+        s09_box_t = SurroundingRectangle(_s09_cmpct, color=GRAY_C, buff=0.12, corner_radius=0.05)
+
+        s09_box = SurroundingRectangle(VGroup(v_lbl, x_comp, y_comp, formula),
+                                       color=GRAY_C, buff=0.15, corner_radius=0.05)
+        self.add_fixed_in_frame_mobjects(s09_box)
+        self.play(Create(s09_box), run_time=0.5)
+        self.play(
+            Transform(v_lbl,   _v_t),
+            Transform(x_comp,  _xc_t),
+            Transform(y_comp,  _yc_t),
+            Transform(formula, _f_t),
+            Transform(s09_box, s09_box_t),
+            run_time=1.2, rate_func=smooth,
+        )
+        # Bring dot_prod line up slightly
+        self.play(dot_prod.animate.to_edge(LEFT, buff=0.40).set_y(-0.6), run_time=0.7, rate_func=smooth)
+        self.wait(0.4)
+
+        # ── Step 3: highlight column vector → reveal gradient ──────
+        col_rect = SurroundingRectangle(dot_prod[1], color=YELLOW_C, buff=0.07, corner_radius=0.04)
+        self.add_fixed_in_frame_mobjects(col_rect)
+        self.play(Create(col_rect), run_time=0.5)
+
+        grad_def = MathTex(
+            r"\nabla f",
+            r"=",
+            r"\begin{pmatrix} \frac{\partial f}{\partial x} \\[4pt] \frac{\partial f}{\partial y} \end{pmatrix}",
+            r"= \left(\frac{\partial f}{\partial x},\; \frac{\partial f}{\partial y}\right)",
+            font_size=42,
+        )
+        grad_def[0].set_color(YELLOW_C)
+        grad_def[1].set_color(WHITE)
+        grad_def[2].set_color(TEAL_C)
+        grad_def[3].set_color(TEAL_C)
+        grad_def.next_to(dot_prod, DOWN, buff=0.45, aligned_edge=LEFT)
+
+        self.add_fixed_in_frame_mobjects(grad_def)
+        self.play(Write(grad_def), run_time=1.3)
+        self.wait(0.5)
+        self.play(FadeOut(col_rect), run_time=0.3)
+        self.wait(1.5)
+
