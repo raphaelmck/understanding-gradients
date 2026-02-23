@@ -1398,3 +1398,318 @@ class S06_GradientPerp(ThreeDScene):
         self.play(FadeIn(formula, shift=UP * 0.15), run_time=1.0)
 
         self.wait(2.0)
+
+
+class S07_Applications(ThreeDScene):
+    """Physics → Gradient Descent → SGD — smooth gradient vignettes."""
+    def construct(self):
+        import matplotlib.pyplot as plt
+
+        self.set_camera_orientation(
+            phi=0 * DEGREES,
+            theta=-90 * DEGREES,
+            zoom=0.85,
+        )
+
+        axes, _, _ = build_world()
+        N = 250
+        Us, Vs = np.meshgrid(np.linspace(-3, 3, N), np.linspace(-3, 3, N))
+
+        # ── helper: colored VGroup for Transform morph ───────────────────
+        # Each level is a separate VMobject (color sticks to submobject).
+        # All groups use N_MORPH levels so Transform maps 1-to-1 between panels.
+        N_MORPH = 12
+
+        def make_morph(Z_data, levels, colors, lw=2.5):
+            """Returns VGroup of N_MORPH VMobjects, one per contour level.
+            Colours are per-level; same count across all panels enables clean
+            1-to-1 Transform morphing."""
+            fig, am = plt.subplots()
+            cs = am.contour(Us, Vs, Z_data, levels=levels)
+            n_lev  = len(cs.levels)
+            n_col  = len(colors) - 1
+            level_mobs = []
+            for i in range(n_lev):
+                t   = i / max(n_lev - 1, 1)
+                lo  = int(t * n_col)
+                hi  = min(lo + 1, n_col)
+                col = interpolate_color(colors[lo], colors[hi], t * n_col - lo)
+                lev_mob  = VMobject()
+                has_segs = False
+                for seg in cs.allsegs[i]:
+                    if len(seg) < 3:
+                        continue
+                    if len(seg) > 80:
+                        idx = np.round(np.linspace(0, len(seg) - 1, 80)).astype(int)
+                        seg = seg[idx]
+                    sub = VMobject()
+                    sub.set_points_smoothly([axes.c2p(u, v, 0) for u, v in seg])
+                    lev_mob.append_vectorized_mobject(sub)
+                    has_segs = True
+                if has_segs:
+                    lev_mob.set_stroke(col, width=lw, opacity=0.9)
+                else:
+                    # invisible dummy so the level count stays fixed
+                    lev_mob.set_points_smoothly([axes.c2p(0, 0, 0)] * 4)
+                    lev_mob.set_stroke(opacity=0)
+                level_mobs.append(lev_mob)
+            plt.close(fig)
+            return VGroup(*level_mobs).set_z_index(2), cs
+
+        def temp_f(u, v):
+            return 3.0 * np.exp(-(u ** 2 + v ** 2) / 1.5)
+
+        def loss_f(u, v):
+            return 0.12 * u ** 2 + 6.0 * v ** 2
+
+        # ── build all morph objects upfront (same N_MORPH levels each) ───
+        Zp = peaks_f(Us, Vs)
+        Zt = temp_f(Us, Vs)
+        Zl = loss_f(Us, Vs)
+
+        # peaks colours: cold-deep → warm-high (matching scene S01–S06 palette)
+        PKS_COLS = [BLUE_E, BLUE_C, GREEN_C, YELLOW_C, YELLOW_E]
+        # temperature: outer=cold=blue → inner=hot=red
+        TMP_COLS = [BLUE_B, TEAL_C, YELLOW_C, ORANGE, RED]
+        # loss bowl: inner=low=blue → outer=high=warm
+        LOS_COLS = [BLUE_E, BLUE_C, TEAL_C, GREEN_C, YELLOW_C, YELLOW]
+
+        cur_curves, _ = make_morph(Zp, np.linspace(-5, 8, N_MORPH),    PKS_COLS)
+        cur_curves.set_stroke(opacity=0.2)   # S06 dimmed state
+
+        tc_tgt, cs_tc = make_morph(Zt, np.linspace(0.15, 2.7,  N_MORPH), TMP_COLS)
+        pk_tgt, _     = make_morph(Zp, np.linspace(-5, 8,       N_MORPH), PKS_COLS)
+        lc_tgt, _     = make_morph(Zl, np.linspace(0.15, 11,    N_MORPH), LOS_COLS)
+
+        # ── S06 end state ─────────────────────────────────────────
+        u0, v0 = 0.9, 1.2
+        z0     = peaks_f(u0, v0)
+        fu, fv = grad_numeric(peaks_f, u0, v0)
+        gm     = np.linalg.norm([fu, fv])
+        gh     = np.array([fu, fv]) / gm
+        th     = np.array([-fv, fu]) / gm
+        p0     = axes.c2p(u0, v0, 0)
+        arl    = 0.7
+
+        fig_h, am_h = plt.subplots()
+        cs_h = am_h.contour(Us, Vs, Zp, levels=[z0])
+        hc = VGroup()
+        for seg in cs_h.allsegs[0]:
+            if len(seg) < 3:
+                continue
+            if len(seg) > 200:
+                idx = np.round(np.linspace(0, len(seg) - 1, 200)).astype(int)
+                seg = seg[idx]
+            c = VMobject().set_points_smoothly([axes.c2p(u, v, 0) for u, v in seg])
+            c.set_stroke(WHITE, width=4, opacity=1.0).set_z_index(6)
+            hc.add(c)
+        plt.close(fig_h)
+
+        dot  = Dot3D(p0, radius=0.06, color=WHITE).set_z_index(10)
+        gobj = Arrow(p0, axes.c2p(u0 + arl * gh[0], v0 + arl * gh[1], 0),
+                     buff=0, color=RED, stroke_width=5,
+                     max_tip_length_to_length_ratio=0.2).set_z_index(8)
+        perp_ang = np.arctan2(fv, fu) + PI / 2
+        pdx, pdy = np.cos(perp_ang), np.sin(perp_ang)
+        tobj = Arrow(p0, axes.c2p(u0 + arl * pdx, v0 + arl * pdy, 0),
+                     buff=0, color=YELLOW, stroke_width=5,
+                     max_tip_length_to_length_ratio=0.2).set_z_index(9)
+        sq = 0.12
+        ra = VGroup(
+            Line(axes.c2p(u0 + sq * gh[0], v0 + sq * gh[1], 0),
+                 axes.c2p(u0 + sq * (gh[0] + th[0]), v0 + sq * (gh[1] + th[1]), 0),
+                 color=WHITE, stroke_width=2),
+            Line(axes.c2p(u0 + sq * th[0], v0 + sq * th[1], 0),
+                 axes.c2p(u0 + sq * (gh[0] + th[0]), v0 + sq * (gh[1] + th[1]), 0),
+                 color=WHITE, stroke_width=2),
+        ).set_z_index(9)
+
+        nabla_lbl = MathTex(r"\nabla f", color=RED, font_size=44)
+        nabla_lbl.to_edge(RIGHT, buff=0.6).shift(UP * 0.8)
+        s06_fml   = MathTex(r"\nabla f \cdot \mathbf{d} = 0", color=WHITE, font_size=48)
+        s06_fml.to_edge(DOWN, buff=1.8)
+        self.add_fixed_in_frame_mobjects(nabla_lbl, s06_fml)
+        self.add(cur_curves, hc, dot, gobj, tobj, ra)
+        self.wait(0.3)
+
+        # ══════════════════════════════════════════════════════════
+        # PANEL 1 — Physics: Heat Conduction  J = −k∇T
+        # ══════════════════════════════════════════════════════════
+        phys_ttl = Text("Physics", font_size=36, color=WHITE, weight=BOLD)
+        phys_ttl.to_edge(UP, buff=0.3)
+        phys_fml = MathTex(r"\mathbf{J} = -k\,\nabla T", color=BLUE_B, font_size=32)
+        phys_fml.next_to(phys_ttl, DOWN, buff=0.18)
+
+        # 1a. Fade out ALL S06 overlays (elements first, THEN morph)
+        self.play(
+            LaggedStart(
+                FadeOut(ra), FadeOut(tobj), FadeOut(gobj), FadeOut(dot), FadeOut(hc),
+                lag_ratio=0.15,
+            ),
+            FadeOut(nabla_lbl, shift=UP * 0.15),
+            FadeOut(s06_fml,   shift=DOWN * 0.15),
+            run_time=0.9, rate_func=smooth,
+        )
+        # 1b. Morph curves peaks → isotherms
+        self.play(Transform(cur_curves, tc_tgt), run_time=1.4, rate_func=smooth)
+        # 1c. Title only (formula NOT in scene yet)
+        self.add_fixed_in_frame_mobjects(phys_ttl)
+        self.play(Write(phys_ttl), run_time=0.7)
+
+        # Heat-source glow
+        src = axes.c2p(0.0, 0.0, 0)
+        flame = VGroup(
+            Circle(radius=0.38).set_fill(RED, 0.07).set_stroke(width=0),
+            Circle(radius=0.22).set_fill(ORANGE, 0.25).set_stroke(width=0),
+            Circle(radius=0.10).set_fill(YELLOW, 0.80).set_stroke(width=0),
+            Dot(radius=0.045, color=WHITE),
+        ).move_to(src).set_z_index(8)
+        self.play(GrowFromCenter(flame), run_time=0.5)
+
+        # Scattered arrows on curves, min-separation enforced
+        np.random.seed(42)
+        all_cands = []
+        for i in range(len(cs_tc.levels)):
+            for seg in cs_tc.allsegs[i]:
+                if len(seg) < 6:
+                    continue
+                n_sample = max(3, len(seg) // 5)
+                idxs = np.round(np.linspace(0, len(seg) - 1, n_sample)).astype(int)
+                for idx in idxs:
+                    all_cands.append(tuple(seg[idx]))
+        np.random.shuffle(all_cands)
+
+        pos_arrs, neg_arrs, placed_uv = [], [], []
+        min_sep = 0.60
+        for (ui, vi) in all_cands:
+            if any((ui - cu) ** 2 + (vi - cv) ** 2 < min_sep ** 2 for cu, cv in placed_uv):
+                continue
+            tu = (temp_f(ui + 0.01, vi) - temp_f(ui - 0.01, vi)) / 0.02
+            tv = (temp_f(ui, vi + 0.01) - temp_f(ui, vi - 0.01)) / 0.02
+            mag = np.sqrt(tu ** 2 + tv ** 2)
+            if mag < 0.03:
+                continue
+            L  = 0.25
+            sp = axes.c2p(ui, vi, 0)
+            pos_arrs.append(Arrow(
+                sp, axes.c2p(ui + tu / mag * L, vi + tv / mag * L, 0),
+                buff=0, color=RED, stroke_width=3,
+                max_tip_length_to_length_ratio=0.28,
+            ).set_z_index(5))
+            neg_arrs.append(Arrow(
+                sp, axes.c2p(ui - tu / mag * L, vi - tv / mag * L, 0),
+                buff=0, color=BLUE_B, stroke_width=3,
+                max_tip_length_to_length_ratio=0.28,
+            ).set_z_index(5))
+            placed_uv.append((ui, vi))
+
+        self.play(
+            LaggedStart(*[GrowArrow(a) for a in pos_arrs], lag_ratio=0.07),
+            run_time=1.5,
+        )
+        # 1d. Formula only after arrows are up (added to fixed-frame here for first time)
+        self.add_fixed_in_frame_mobjects(phys_fml)
+        self.play(Write(phys_fml), run_time=0.8)
+        self.wait(0.3)
+        self.play(
+            *[Transform(pa, na) for pa, na in zip(pos_arrs, neg_arrs)],
+            run_time=0.9,
+        )
+        self.wait(1.2)
+
+        # ══════════════════════════════════════════════════════════
+        # PANEL 2 — Numerical Methods: Gradient Descent
+        # ══════════════════════════════════════════════════════════
+        num_ttl = Text("Numerical Methods", font_size=36, color=WHITE, weight=BOLD)
+        num_ttl.to_edge(UP, buff=0.3)
+        num_fml = MathTex(
+            r"\mathbf{x}_{n+1} = \mathbf{x}_n - \alpha\,\nabla f(\mathbf{x}_n)",
+            color=YELLOW, font_size=28,
+        )
+        num_fml.next_to(num_ttl, DOWN, buff=0.18)
+
+        # 2a. Fade out Physics elements first
+        self.play(
+            FadeOut(phys_ttl, shift=UP * 0.2),
+            FadeOut(phys_fml, shift=UP * 0.2),
+            FadeOut(flame),
+            LaggedStart(*[FadeOut(a) for a in pos_arrs], lag_ratio=0.05),
+            run_time=0.8, rate_func=smooth,
+        )
+        # 2b. Morph curves isotherms → peaks
+        self.play(Transform(cur_curves, pk_tgt), run_time=1.4, rate_func=smooth)
+        # 2c. Title only
+        self.add_fixed_in_frame_mobjects(num_ttl)
+        self.play(Write(num_ttl), run_time=0.7)
+
+        # Gradient descent path
+        lr, ux, vx = 0.10, -2.0, 1.6
+        gd_pts = [axes.c2p(ux, vx, 0)]
+        for _ in range(14):
+            gfu_v, gfv_v = grad_numeric(peaks_f, ux, vx)
+            ux = np.clip(ux - lr * gfu_v, -2.9, 2.9)
+            vx = np.clip(vx - lr * gfv_v, -2.9, 2.9)
+            gd_pts.append(axes.c2p(ux, vx, 0))
+
+        gd_line  = VMobject().set_points_smoothly(gd_pts)
+        gd_line.set_stroke(YELLOW, width=4).set_z_index(6)
+        gd_hops  = VGroup(*[Dot3D(p, radius=0.045, color=YELLOW).set_z_index(7) for p in gd_pts])
+        gd_start = Dot3D(gd_pts[0],  radius=0.08, color=YELLOW).set_z_index(9)
+        gd_end   = Dot3D(gd_pts[-1], radius=0.09, color=GREEN_C).set_z_index(9)
+
+        self.play(FadeIn(gd_start, scale=2.0), run_time=0.4)
+        self.play(Create(gd_line), FadeIn(gd_hops), run_time=2.0, rate_func=smooth)
+        self.play(FadeIn(gd_end, scale=2.5), run_time=0.4)
+        # 2d. Formula after path is fully drawn
+        self.add_fixed_in_frame_mobjects(num_fml)
+        self.play(Write(num_fml), run_time=0.8)
+        self.wait(1.0)
+
+        # ══════════════════════════════════════════════════════════
+        # PANEL 3 — Machine Learning: SGD
+        # ══════════════════════════════════════════════════════════
+        ml_ttl  = Text("Machine Learning", font_size=36, color=WHITE, weight=BOLD)
+        ml_ttl.to_edge(UP, buff=0.3)
+        sgd_fml = MathTex(
+            r"\mathbf{w} \leftarrow \mathbf{w} - \alpha\,\nabla_{\!\mathcal{B}}\,\mathcal{L}(\mathbf{w})",
+            color=YELLOW, font_size=28,
+        )
+        sgd_fml.next_to(ml_ttl, DOWN, buff=0.18)
+
+        # 3a. Fade out Numerical elements first
+        self.play(
+            FadeOut(num_ttl, shift=UP * 0.2),
+            FadeOut(num_fml, shift=UP * 0.2),
+            FadeOut(gd_line), FadeOut(gd_hops), FadeOut(gd_start), FadeOut(gd_end),
+            run_time=0.8, rate_func=smooth,
+        )
+        # 3b. Morph curves peaks → loss ellipses
+        self.play(Transform(cur_curves, lc_tgt), run_time=1.4, rate_func=smooth)
+        # 3c. Title only
+        self.add_fixed_in_frame_mobjects(ml_ttl)
+        self.play(Write(ml_ttl), run_time=0.7)
+
+        # SGD path
+        np.random.seed(7)
+        lr2, w1, w2 = 0.16, 2.5, 0.55
+        sgd_pts = [axes.c2p(w1, w2, 0)]
+        for _ in range(28):
+            gw1 = 2 * 0.12 * w1 + np.random.normal(0, 0.04)
+            gw2 = 2 * 6.0  * w2 + np.random.normal(0, 0.04)
+            w1  = np.clip(w1 - lr2 * gw1, -2.9, 2.9)
+            w2  = np.clip(w2 - lr2 * gw2, -2.9, 2.9)
+            sgd_pts.append(axes.c2p(w1, w2, 0))
+
+        sgd_line  = VMobject().set_points_smoothly(sgd_pts)
+        sgd_line.set_stroke(YELLOW, width=4).set_z_index(6)
+        sgd_hops  = VGroup(*[Dot3D(p, radius=0.04, color=YELLOW).set_z_index(7) for p in sgd_pts])
+        sgd_start = Dot3D(sgd_pts[0],  radius=0.08, color=YELLOW).set_z_index(9)
+        sgd_end   = Dot3D(sgd_pts[-1], radius=0.09, color=GREEN_C).set_z_index(9)
+
+        self.play(FadeIn(sgd_start, scale=2.0), run_time=0.4)
+        self.play(Create(sgd_line), FadeIn(sgd_hops), run_time=2.5, rate_func=smooth)
+        self.play(FadeIn(sgd_end, scale=2.5), run_time=0.4)
+        # 3d. Formula after path is fully drawn
+        self.add_fixed_in_frame_mobjects(sgd_fml)
+        self.play(Write(sgd_fml), run_time=0.8)
+        self.wait(2.0)
