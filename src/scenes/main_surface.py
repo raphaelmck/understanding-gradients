@@ -1712,4 +1712,329 @@ class S07_Applications(ThreeDScene):
         # 3d. Formula after path is fully drawn
         self.add_fixed_in_frame_mobjects(sgd_fml)
         self.play(Write(sgd_fml), run_time=0.8)
-        self.wait(2.0)
+        self.wait(1.8)
+
+
+class S08_PartialDerivatives(ThreeDScene):
+    """∂f/∂x and ∂f/∂y — direction-specific height measurements."""
+
+    def construct(self):
+        # Camera in the same octant as the white point (x>0, y>0, z>0):
+        # theta=40° puts us between the +x and +y axes, phi=60° is a comfortable
+        # elevation so both tangent arrows are clearly visible.
+        self.set_camera_orientation(phi=60 * DEGREES, theta=40 * DEGREES, zoom=0.80)
+
+        # ── Starts from black ──────────────────────────────────────────
+        self.wait(0.5)
+
+        # Axes pushed far right so the surface occupies the right half of screen
+        axes = ThreeDAxes(
+            x_range=[-2.5, 2.5, 1],
+            y_range=[-2.5, 2.5, 1],
+            z_range=[-0.5, 4.0, 1],
+            x_length=6, y_length=6, z_length=5,
+            axis_config={
+                "color": GRAY_C, "include_tip": True,
+                "tip_length": 0.15, "stroke_width": 2,
+            },
+        )
+        # With theta=40°, screen-right in world space = (-sin40°, cos40°, 0).
+        # World -z is screen-down in 3D (z is the vertical axis in Manim 3D).
+        _cam_theta = 40 * DEGREES
+        axes.shift(np.array([-np.sin(_cam_theta), np.cos(_cam_theta), 0]) * 3.5 + np.array([0, 0, -1]) * 1.2)
+
+        def sf(u, v):
+            return 2.2 * np.exp(-0.45 * (u ** 2 + v ** 2)) + 0.3 * u - 0.1 * v + 0.4
+
+        surf = Surface(
+            lambda u, v: axes.c2p(u, v, sf(u, v)),
+            u_range=[-2.4, 2.4], v_range=[-2.4, 2.4],
+            resolution=(28, 28),
+        )
+        surf.set_style(fill_opacity=0.55, stroke_width=0.5, stroke_opacity=0.2)
+        surf.set_color_by_gradient(BLUE_E, TEAL_C, GREEN_C, YELLOW_C, ORANGE)
+
+        x0, y0 = 0.6, 0.4
+        z0 = sf(x0, y0)
+        h  = 0.005
+        dfdx_v = (sf(x0 + h, y0) - sf(x0 - h, y0)) / (2 * h)
+        dfdy_v = (sf(x0, y0 + h) - sf(x0, y0 - h)) / (2 * h)
+        p0 = axes.c2p(x0, y0, z0)
+        dot = Dot3D(p0, radius=0.07, color=WHITE).set_z_index(10)
+
+        # ── x-slice: fix y=y0, vary x (RED) ──────────────────────
+        x_pts   = [axes.c2p(t, y0, sf(t, y0)) for t in np.linspace(-2.3, 2.3, 120)]
+        x_slice = VMobject().set_points_smoothly(x_pts)
+        x_slice.set_stroke(RED_C, width=5).set_z_index(5)
+
+        aL = 1.0
+        x_tang = Arrow3D(
+            start=axes.c2p(x0 - 0.12, y0, z0 - dfdx_v * 0.12),
+            end=axes.c2p(x0 + aL,     y0, z0 + dfdx_v * aL),
+            color=RED_C, thickness=0.025,
+        )
+
+        # ── y-slice: fix x=x0, vary y (BLUE) ─────────────────────
+        y_pts   = [axes.c2p(x0, t, sf(x0, t)) for t in np.linspace(-2.3, 2.3, 120)]
+        y_slice = VMobject().set_points_smoothly(y_pts)
+        y_slice.set_stroke(BLUE_C, width=5).set_z_index(5)
+
+        y_tang = Arrow3D(
+            start=axes.c2p(x0, y0 - 0.12, z0 - dfdy_v * 0.12),
+            end=axes.c2p(x0, y0 + aL,     z0 + dfdy_v * aL),
+            color=BLUE_C, thickness=0.025,
+        )
+
+        # ── 2D overlay labels (left side) ─────────────────────────
+        # f(x,y) at the top of the plot (upper-right)
+        f_lbl = MathTex(r"f(x,y)", color=WHITE, font_size=42)
+        f_lbl.to_corner(UR, buff=0.45)
+
+        # Partial derivative equations stacked on the LEFT — no description text
+        dfdx_block = VGroup(
+            MathTex(r"\frac{\partial f}{\partial x}", color=RED_C, font_size=48),
+            Text(": move only in  x", color=WHITE, font_size=26),
+        ).arrange(RIGHT, buff=0.20)
+        dfdx_block.to_corner(UL, buff=0.45)
+
+        dfdy_block = VGroup(
+            MathTex(r"\frac{\partial f}{\partial y}", color=BLUE_C, font_size=48),
+            Text(": move only in  y", color=WHITE, font_size=26),
+        ).arrange(RIGHT, buff=0.20)
+        dfdy_block.next_to(dfdx_block, DOWN, buff=0.50, aligned_edge=LEFT)
+
+        dir_lbl = Text(
+            "direction-specific measurements",
+            font_size=28, color=YELLOW_C, weight=BOLD,
+        )
+        dir_lbl.next_to(dfdy_block, DOWN, buff=0.45, aligned_edge=LEFT)
+
+        # ── Animation ──────────────────────────────────────────────
+        self.play(FadeIn(axes), run_time=0.9)
+        self.play(Create(surf), run_time=1.8, rate_func=smooth)
+
+        self.add_fixed_in_frame_mobjects(f_lbl)
+        self.play(Write(f_lbl), run_time=0.6)
+        self.play(FadeIn(dot, scale=1.5), run_time=0.5)
+        self.wait(0.4)
+
+        # ── ∂f/∂x ─────────────────────────────────────────────────
+        # x-axis turns RED as the x-slice curve appears
+        self.play(
+            Create(x_slice),
+            axes.x_axis.animate.set_color(RED_C),
+            run_time=1.3, rate_func=smooth,
+        )
+
+        x_tr = ValueTracker(-1.8)
+        mv_x = always_redraw(lambda: Dot3D(
+            axes.c2p(x_tr.get_value(), y0, sf(x_tr.get_value(), y0)),
+            radius=0.055, color=RED,
+        ).set_z_index(8))
+        self.add(mv_x)
+        self.play(x_tr.animate.set_value(1.8), run_time=1.4, rate_func=smooth)
+        self.remove(mv_x)
+
+        self.play(FadeIn(x_tang), run_time=0.6)
+        self.add_fixed_in_frame_mobjects(dfdx_block)
+        self.play(Write(dfdx_block), run_time=0.9)
+        self.wait(0.7)
+
+        # ── ∂f/∂y ─────────────────────────────────────────────────
+        # y-axis turns BLUE as the y-slice curve appears
+        self.play(
+            Create(y_slice),
+            axes.y_axis.animate.set_color(BLUE_C),
+            run_time=1.3, rate_func=smooth,
+        )
+
+        y_tr = ValueTracker(-1.8)
+        mv_y = always_redraw(lambda: Dot3D(
+            axes.c2p(x0, y_tr.get_value(), sf(x0, y_tr.get_value())),
+            radius=0.055, color=BLUE,
+        ).set_z_index(8))
+        self.add(mv_y)
+        self.play(y_tr.animate.set_value(1.8), run_time=1.4, rate_func=smooth)
+        self.remove(mv_y)
+
+        self.play(FadeIn(y_tang), run_time=0.6)
+        self.add_fixed_in_frame_mobjects(dfdy_block)
+        self.play(Write(dfdy_block), run_time=0.9)
+        self.wait(0.7)
+
+        # ── punchline ──────────────────────────────────────────────
+        self.add_fixed_in_frame_mobjects(dir_lbl)
+        self.play(Write(dir_lbl), run_time=0.7)
+        self.wait(1.5)
+
+
+class S09_DirectionalDerivative(ThreeDScene):
+    """Δf ≈ vx·∂f/∂x + vy·∂f/∂y — the directional derivative."""
+
+    def construct(self):
+        self.set_camera_orientation(phi=60 * DEGREES, theta=40 * DEGREES, zoom=0.80)
+
+        # ── Rebuild S08 end state ──────────────────────────────────
+        axes = ThreeDAxes(
+            x_range=[-2.5, 2.5, 1], y_range=[-2.5, 2.5, 1], z_range=[-0.5, 4.0, 1],
+            x_length=6, y_length=6, z_length=5,
+            axis_config={"color": GRAY_C, "include_tip": True,
+                         "tip_length": 0.15, "stroke_width": 2},
+        )
+        _ct = 40 * DEGREES
+        axes.shift(
+            np.array([-np.sin(_ct), np.cos(_ct), 0]) * 3.5
+            + np.array([0, 0, -1]) * 1.2
+        )
+
+        def sf(u, v):
+            return 2.2 * np.exp(-0.45 * (u ** 2 + v ** 2)) + 0.3 * u - 0.1 * v + 0.4
+
+        surf = Surface(
+            lambda u, v: axes.c2p(u, v, sf(u, v)),
+            u_range=[-2.4, 2.4], v_range=[-2.4, 2.4], resolution=(28, 28),
+        )
+        surf.set_style(fill_opacity=0.55, stroke_width=0.5, stroke_opacity=0.2)
+        surf.set_color_by_gradient(BLUE_E, TEAL_C, GREEN_C, YELLOW_C, ORANGE)
+
+        x0, y0 = 0.6, 0.4
+        z0 = sf(x0, y0)
+        h = 0.005
+        dfdx_v = (sf(x0 + h, y0) - sf(x0 - h, y0)) / (2 * h)
+        dfdy_v = (sf(x0, y0 + h) - sf(x0, y0 - h)) / (2 * h)
+        dot = Dot3D(axes.c2p(x0, y0, z0), radius=0.07, color=WHITE).set_z_index(10)
+
+        # Slice curves + tangent arrows (S08 state — will be faded out)
+        x_pts = [axes.c2p(t, y0, sf(t, y0)) for t in np.linspace(-2.3, 2.3, 120)]
+        x_slice = VMobject().set_points_smoothly(x_pts).set_stroke(RED_C, width=5).set_z_index(5)
+        y_pts = [axes.c2p(x0, t, sf(x0, t)) for t in np.linspace(-2.3, 2.3, 120)]
+        y_slice = VMobject().set_points_smoothly(y_pts).set_stroke(BLUE_C, width=5).set_z_index(5)
+
+        aT = 1.0
+        x_tang = Arrow3D(
+            start=axes.c2p(x0 - 0.12, y0, z0 - dfdx_v * 0.12),
+            end=axes.c2p(x0 + aT, y0, z0 + dfdx_v * aT),
+            color=RED_C, thickness=0.025,
+        )
+        y_tang = Arrow3D(
+            start=axes.c2p(x0, y0 - 0.12, z0 - dfdy_v * 0.12),
+            end=axes.c2p(x0, y0 + aT, z0 + dfdy_v * aT),
+            color=BLUE_C, thickness=0.025,
+        )
+
+        # ── S08 2D labels at their S08 positions ──────────────────
+        f_lbl = MathTex(r"f(x,y)", color=WHITE, font_size=42).to_corner(UR, buff=0.45)
+        dfdx_block = VGroup(
+            MathTex(r"\frac{\partial f}{\partial x}", color=RED_C, font_size=48),
+            Text(": move only in  x", color=WHITE, font_size=26),
+        ).arrange(RIGHT, buff=0.20).to_corner(UL, buff=0.45)
+        dfdy_block = VGroup(
+            MathTex(r"\frac{\partial f}{\partial y}", color=BLUE_C, font_size=48),
+            Text(": move only in  y", color=WHITE, font_size=26),
+        ).arrange(RIGHT, buff=0.20).next_to(dfdx_block, DOWN, buff=0.50, aligned_edge=LEFT)
+        dir_lbl = Text(
+            "direction-specific measurements", font_size=28, color=YELLOW_C, weight=BOLD,
+        ).next_to(dfdy_block, DOWN, buff=0.45, aligned_edge=LEFT)
+
+        # ── S09 new labels (placed in left column, mid-screen) ────
+        v_lbl = VGroup(
+            MathTex(r"\mathbf{v} = (v_x,\, v_y)", color=GOLD, font_size=38),
+            Text("unit vector", color=WHITE, font_size=24),
+        ).arrange(RIGHT, buff=0.18)
+        v_lbl.to_edge(LEFT, buff=0.40).set_y(1.8)
+
+        x_comp = VGroup(
+            MathTex(r"v_x", color=RED_C, font_size=34),
+            Text(": move in x-direction", color=WHITE, font_size=22),
+        ).arrange(RIGHT, buff=0.15)
+        x_comp.next_to(v_lbl, DOWN, buff=0.28, aligned_edge=LEFT)
+
+        y_comp = VGroup(
+            MathTex(r"v_y", color=BLUE_C, font_size=34),
+            Text(": move in y-direction", color=WHITE, font_size=22),
+        ).arrange(RIGHT, buff=0.15)
+        y_comp.next_to(x_comp, DOWN, buff=0.20, aligned_edge=LEFT)
+
+        formula = VGroup(
+            MathTex(r"\Delta f \approx \;", color=WHITE, font_size=36),
+            MathTex(r"v_x", color=RED_C, font_size=36),
+            MathTex(r"\frac{\partial f}{\partial x}", color=RED_C, font_size=36),
+            MathTex(r"+", color=WHITE, font_size=36),
+            MathTex(r"v_y", color=BLUE_C, font_size=36),
+            MathTex(r"\frac{\partial f}{\partial y}", color=BLUE_C, font_size=36),
+        ).arrange(RIGHT, buff=0.08)
+        formula.next_to(y_comp, DOWN, buff=0.38, aligned_edge=LEFT)
+
+        # ── 3D direction arrows ────────────────────────────────────
+        ang = 35 * DEGREES
+        vx_val, vy_val = np.cos(ang), np.sin(ang)
+        aD = 1.1
+
+        v_arr = Arrow3D(
+            start=axes.c2p(x0, y0, z0),
+            end=axes.c2p(x0 + vx_val * aD, y0 + vy_val * aD, z0),
+            color=GOLD, thickness=0.028,
+        )
+        vx_arr = Arrow3D(
+            start=axes.c2p(x0, y0, z0),
+            end=axes.c2p(x0 + vx_val * aD, y0, z0),
+            color=RED_C, thickness=0.022,
+        )
+        vy_arr = Arrow3D(
+            start=axes.c2p(x0 + vx_val * aD, y0, z0),
+            end=axes.c2p(x0 + vx_val * aD, y0 + vy_val * aD, z0),
+            color=BLUE_C, thickness=0.022,
+        )
+
+        # ── Start scene with S08 end state ────────────────────────
+        self.add(axes, surf, dot, x_slice, x_tang, y_slice, y_tang)
+        axes.x_axis.set_color(RED_C)
+        axes.y_axis.set_color(BLUE_C)
+        self.add_fixed_in_frame_mobjects(f_lbl, dfdx_block, dfdy_block, dir_lbl)
+        self.wait(0.4)
+
+        # ── Box the S08 labels then shrink to top-left ─────────────
+        s08_grp = VGroup(dfdx_block, dfdy_block, dir_lbl)
+        box = SurroundingRectangle(s08_grp, color=GRAY_C, buff=0.15, corner_radius=0.05)
+        self.add_fixed_in_frame_mobjects(box)
+        self.play(Create(box), run_time=0.5)
+
+        # Build compact target: dfdx and dfdy side-by-side, dir_lbl below
+        _dfdx_t = dfdx_block.copy()
+        _dfdy_t = dfdy_block.copy()
+        _dir_t  = dir_lbl.copy()
+        _row    = VGroup(_dfdx_t, _dfdy_t).arrange(RIGHT, buff=0.40)
+        _compact = VGroup(_row, _dir_t).arrange(DOWN, aligned_edge=LEFT, buff=0.22)
+        _compact.scale(0.65).to_corner(UL, buff=0.22)
+        _box_t = SurroundingRectangle(_compact, color=GRAY_C, buff=0.12, corner_radius=0.05)
+
+        self.play(
+            Transform(dfdx_block, _dfdx_t),
+            Transform(dfdy_block, _dfdy_t),
+            Transform(dir_lbl,    _dir_t),
+            Transform(box,        _box_t),
+            FadeOut(x_slice, y_slice, x_tang, y_tang),
+            axes.x_axis.animate.set_color(GRAY_C),
+            axes.y_axis.animate.set_color(GRAY_C),
+            run_time=1.3, rate_func=smooth,
+        )
+        self.wait(0.4)
+
+        # ── Introduce direction vector v ───────────────────────────
+        self.add_fixed_in_frame_mobjects(v_lbl)
+        self.play(Write(v_lbl), FadeIn(v_arr), run_time=0.9)
+        self.wait(0.3)
+
+        # x-component
+        self.add_fixed_in_frame_mobjects(x_comp)
+        self.play(Write(x_comp), FadeIn(vx_arr), run_time=0.9)
+
+        # y-component
+        self.add_fixed_in_frame_mobjects(y_comp)
+        self.play(Write(y_comp), FadeIn(vy_arr), run_time=0.9)
+        self.wait(0.3)
+
+        # Formula
+        self.add_fixed_in_frame_mobjects(formula)
+        self.play(Write(formula), run_time=1.2)
+        self.wait(1.5)
