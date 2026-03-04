@@ -1,4 +1,4 @@
-> The surface generates, and slowly spins
+ > The surface generates, and slowly spins
 
 Suppose you have a landscape, or terrain, and you want to find which direction to go, in order to climb up, or ascend, as fast as possible. 
 
